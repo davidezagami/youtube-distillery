@@ -159,14 +159,14 @@ def fetch_channel_videos(channel_url: str, after_date: str) -> list[dict]:
 # Transcript helpers
 # ---------------------------------------------------------------------------
 
-def transcribe_video_yt(video_id: str, lang: str = "en", timestamps: bool = True, proxy_config=None) -> str | None:
-    """Try to get a YouTube caption transcript. Returns markdown text or None."""
+def transcribe_video_yt(video_id: str, lang: str = "en", timestamps: bool = True, proxy_config=None) -> tuple[str | None, str | None]:
+    """Try to get a YouTube caption transcript. Returns (markdown_text, error_reason)."""
     try:
         entries = download_transcript(video_id, lang=lang, proxy_config=proxy_config)
         entries = deduplicate(entries)
     except Exception as exc:
         print(f"    Caption fetch error: {exc}")
-        return None
+        return None, str(exc)
 
     if timestamps:
         lines = []
@@ -175,9 +175,12 @@ def transcribe_video_yt(video_id: str, lang: str = "en", timestamps: bool = True
             if text:
                 ts = format_timestamp(entry.start)
                 lines.append(f"**[{ts}]** {text}")
-        return "\n\n".join(lines) if lines else None
+        body = "\n\n".join(lines) if lines else None
     else:
-        return entries_to_plain_text(entries) or None
+        body = entries_to_plain_text(entries) or None
+
+    error = None if body else "YouTube captions returned empty transcript"
+    return body, error
 
 
 def download_audio_to(url: str, output_path: Path) -> Path:
@@ -301,7 +304,7 @@ def process_videos(
 
         # 1. Try YouTube captions
         print("  Trying YouTube captions...")
-        body = transcribe_video_yt(video["id"], lang=lang, timestamps=timestamps, proxy_config=proxy_config)
+        body, yt_error = transcribe_video_yt(video["id"], lang=lang, timestamps=timestamps, proxy_config=proxy_config)
         if body:
             method = "youtube-captions"
             if enhance and anthropic_key:
@@ -311,6 +314,7 @@ def process_videos(
             print("  Success (YouTube captions).")
 
         # 2. Fallback to AssemblyAI
+        aai_error = None
         if body is None and assemblyai_key and anthropic_key:
             print("  YouTube captions unavailable, trying AssemblyAI...")
             try:
@@ -320,8 +324,11 @@ def process_videos(
                 if body:
                     method = "assemblyai+enhanced"
                     print("  Success (AssemblyAI).")
+                else:
+                    aai_error = "AssemblyAI returned empty transcript"
             except Exception as exc:
                 print(f"  AssemblyAI failed: {exc}")
+                aai_error = str(exc)
 
         # 3. Update status
         if body:
@@ -329,10 +336,17 @@ def process_videos(
             video["status"] = "transcribed"
             video["method"] = method
             video["transcript_file"] = str(path.relative_to(output_dir))
+            video.pop("failure_reason", None)  # clear if retrying a previously failed video
             print(f"  Saved to {path}")
         else:
             video["status"] = "failed"
-            print("  FAILED — no transcript could be obtained.")
+            reasons = []
+            if yt_error:
+                reasons.append(f"YouTube captions: {yt_error}")
+            if aai_error:
+                reasons.append(f"AssemblyAI: {aai_error}")
+            video["failure_reason"] = "; ".join(reasons) if reasons else "No transcription method available"
+            print(f"  FAILED — {video['failure_reason']}")
 
         # Save index after each video for resumability
         save_index(output_dir, index)

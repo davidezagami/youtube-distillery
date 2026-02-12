@@ -62,6 +62,28 @@ Fetch + transcribe in one step. Accepts all options from both commands.
 python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output [--enhance] [--no-timestamps] [--lang LANG]
 ```
 
+## Proxy support
+
+YouTube may block transcript requests from cloud provider IPs (or after heavy use). You can route requests through [Webshare](https://www.webshare.io/) rotating residential proxies:
+
+```bash
+# Via CLI flags
+python channeltool.py transcribe -o ./output --webshare-user USER --webshare-pass PASS
+
+# Via environment variables
+export WEBSHARE_PROXY_USER=USER
+export WEBSHARE_PROXY_PASS=PASS
+python channeltool.py run https://www.youtube.com/@SomeChannel --after 2025-01-01 -o ./output
+```
+
+The standalone script also supports the same flags:
+
+```bash
+python yttranscribe.py VIDEO_URL --webshare-user USER --webshare-pass PASS
+```
+
+When no proxy credentials are provided, requests go direct (unchanged behaviour).
+
 ## Output structure
 
 ```

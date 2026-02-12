@@ -159,12 +159,13 @@ def fetch_channel_videos(channel_url: str, after_date: str) -> list[dict]:
 # Transcript helpers
 # ---------------------------------------------------------------------------
 
-def transcribe_video_yt(video_id: str, lang: str = "en", timestamps: bool = True) -> str | None:
+def transcribe_video_yt(video_id: str, lang: str = "en", timestamps: bool = True, proxy_config=None) -> str | None:
     """Try to get a YouTube caption transcript. Returns markdown text or None."""
     try:
-        entries = download_transcript(video_id, lang=lang)
+        entries = download_transcript(video_id, lang=lang, proxy_config=proxy_config)
         entries = deduplicate(entries)
-    except Exception:
+    except Exception as exc:
+        print(f"    Caption fetch error: {exc}")
         return None
 
     if timestamps:
@@ -279,6 +280,7 @@ def process_videos(
     anthropic_model: str = "claude-sonnet-4-5-20250929",
     lang: str = "en",
     timestamps: bool = True,
+    proxy_config=None,
 ) -> None:
     """Transcribe all pending videos in the index."""
     index = load_index(output_dir)
@@ -299,7 +301,7 @@ def process_videos(
 
         # 1. Try YouTube captions
         print("  Trying YouTube captions...")
-        body = transcribe_video_yt(video["id"], lang=lang, timestamps=timestamps)
+        body = transcribe_video_yt(video["id"], lang=lang, timestamps=timestamps, proxy_config=proxy_config)
         if body:
             method = "youtube-captions"
             if enhance and anthropic_key:
@@ -378,6 +380,14 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
     anthropic_key = args.anthropic_key or os.getenv("ANTHROPIC_API_KEY")
     anthropic_model = args.model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
 
+    ws_user = args.webshare_user or os.getenv("WEBSHARE_PROXY_USER")
+    ws_pass = args.webshare_pass or os.getenv("WEBSHARE_PROXY_PASS")
+    if ws_user and ws_pass:
+        from youtube_transcript_api.proxies import WebshareProxyConfig
+        proxy_config = WebshareProxyConfig(proxy_username=ws_user, proxy_password=ws_pass)
+    else:
+        proxy_config = None
+
     process_videos(
         output_dir,
         enhance=args.enhance,
@@ -386,6 +396,7 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
         anthropic_model=anthropic_model,
         lang=args.lang,
         timestamps=not args.no_timestamps,
+        proxy_config=proxy_config,
     )
     return 0
 
@@ -426,6 +437,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_trans.add_argument("--assemblyai-key", help="AssemblyAI API key (or ASSEMBLYAI_API_KEY env)")
     p_trans.add_argument("--anthropic-key", help="Anthropic API key (or ANTHROPIC_API_KEY env)")
     p_trans.add_argument("--model", help="Anthropic model (or ANTHROPIC_MODEL env)")
+    p_trans.add_argument("--webshare-user", help="Webshare proxy username (or WEBSHARE_PROXY_USER env)")
+    p_trans.add_argument("--webshare-pass", help="Webshare proxy password (or WEBSHARE_PROXY_PASS env)")
     p_trans.set_defaults(func=cmd_transcribe)
 
     # -- run --
@@ -444,6 +457,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--assemblyai-key", help="AssemblyAI API key (or ASSEMBLYAI_API_KEY env)")
     p_run.add_argument("--anthropic-key", help="Anthropic API key (or ANTHROPIC_API_KEY env)")
     p_run.add_argument("--model", help="Anthropic model (or ANTHROPIC_MODEL env)")
+    p_run.add_argument("--webshare-user", help="Webshare proxy username (or WEBSHARE_PROXY_USER env)")
+    p_run.add_argument("--webshare-pass", help="Webshare proxy password (or WEBSHARE_PROXY_PASS env)")
     p_run.set_defaults(func=cmd_run)
 
     return parser

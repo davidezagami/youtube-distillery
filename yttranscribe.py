@@ -2,6 +2,7 @@
 """Download a YouTube video transcript and save it to a file."""
 
 import sys
+import os
 import re
 import argparse
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -29,9 +30,9 @@ def format_timestamp(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
-def download_transcript(video_id: str, lang: str = "en") -> list:
+def download_transcript(video_id: str, lang: str = "en", proxy_config=None) -> list:
     """Fetch transcript, preferring manual captions over auto-generated."""
-    ytt_api = YouTubeTranscriptApi()
+    ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
 
     transcript_list = ytt_api.list(video_id)
 
@@ -201,12 +202,21 @@ def main():
     parser.add_argument("output", nargs="?", default="transcript.md", help="Output file (default: transcript.md)")
     parser.add_argument("--no-timestamps", action="store_true", help="Omit timestamps from output")
     parser.add_argument("--chat", action="store_true", help="Start an interactive AI chat about the transcript")
+    parser.add_argument("--webshare-user", help="Webshare proxy username (or WEBSHARE_PROXY_USER env)")
+    parser.add_argument("--webshare-pass", help="Webshare proxy password (or WEBSHARE_PROXY_PASS env)")
     args = parser.parse_args()
+
+    proxy_config = None
+    ws_user = getattr(args, "webshare_user", None) or os.getenv("WEBSHARE_PROXY_USER")
+    ws_pass = getattr(args, "webshare_pass", None) or os.getenv("WEBSHARE_PROXY_PASS")
+    if ws_user and ws_pass:
+        from youtube_transcript_api.proxies import WebshareProxyConfig
+        proxy_config = WebshareProxyConfig(proxy_username=ws_user, proxy_password=ws_pass)
 
     video_id = extract_video_id(args.url)
     print(f"Fetching transcript for video: {video_id}")
 
-    entries = download_transcript(video_id)
+    entries = download_transcript(video_id, proxy_config=proxy_config)
     entries = deduplicate(entries)
     save_transcript(entries, args.output, video_id, timestamps=not args.no_timestamps)
 

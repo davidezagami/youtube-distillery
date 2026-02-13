@@ -18,6 +18,19 @@ from pathlib import Path
 import anthropic
 
 
+def find_latest_summaries(input_dir: Path) -> Path:
+    """Find the highest-versioned summaries file, falling back to summaries.md."""
+    base = input_dir / "summaries.md"
+    latest = base
+    version = 2
+    while (candidate := input_dir / f"summaries_v{version}.md").exists():
+        latest = candidate
+        version += 1
+    if not latest.exists():
+        return base  # let caller handle the missing-file error
+    return latest
+
+
 def parse_sections(text: str) -> list[str]:
     """Split summaries.md on '\\n---\\n' separator, dropping empty sections."""
     parts = text.split("\n---\n")
@@ -105,10 +118,11 @@ def main() -> int:
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
-    summaries_path = input_dir / "summaries.md"
+    summaries_path = find_latest_summaries(input_dir)
     if not summaries_path.exists():
         print(f"Error: no summaries.md found in {input_dir}")
         return 1
+    print(f"Using {summaries_path.name}")
 
     prompt_path = Path(args.prompt_file)
     if not prompt_path.exists():

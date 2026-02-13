@@ -16,6 +16,19 @@ from pathlib import Path
 URL_PATTERN = re.compile(r"https://www\.youtube\.com/watch\?v=[A-Za-z0-9_-]+")
 
 
+def find_latest_summaries(input_dir: Path) -> Path:
+    """Find the highest-versioned summaries file, falling back to summaries.md."""
+    base = input_dir / "summaries.md"
+    latest = base
+    version = 2
+    while (candidate := input_dir / f"summaries_v{version}.md").exists():
+        latest = candidate
+        version += 1
+    if not latest.exists():
+        return base  # let caller handle the missing-file error
+    return latest
+
+
 def extract_outlier_urls(analysis_text: str) -> set[str]:
     """Extract all YouTube URLs from the analysis output."""
     return set(URL_PATTERN.findall(analysis_text))
@@ -58,10 +71,11 @@ def main() -> int:
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
-    summaries_path = input_dir / "summaries.md"
+    summaries_path = find_latest_summaries(input_dir)
     if not summaries_path.exists():
         print(f"Error: no summaries.md found in {input_dir}")
         return 1
+    print(f"Using {summaries_path.name}")
 
     analysis_path = Path(args.analysis) if args.analysis else input_dir / "analysis.md"
     if not analysis_path.exists():

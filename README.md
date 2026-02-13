@@ -1,6 +1,6 @@
-# YouTube Channel Transcription Tools
+# YouTube Channel Transcription & Analysis Pipeline
 
-Fetch and transcribe all videos from a YouTube channel. YouTube captions preferred, AssemblyAI as fallback.
+Fetch, transcribe, summarize, and curate videos from YouTube channels. YouTube captions preferred, AssemblyAI as fallback. Summaries are generated with Claude, then iteratively analyzed and pruned to remove off-topic content.
 
 ## Setup
 
@@ -29,6 +29,14 @@ python channeltool.py transcribe -o ./output
 
 # 3. Or do both in one step
 python channeltool.py run https://www.youtube.com/@SomeChannel --after 2025-01-01 -o ./output
+
+# 4. Summarize all transcripts
+python summarize.py output/ --prompt-file summary_prompt.txt
+
+# 5. Analyze summaries for outliers, then prune them (repeatable loop)
+python analyze.py output/ --prompt-file find_outliers.txt
+python prune.py output/
+# Re-run analyze + prune until no outliers remain — each cycle auto-detects the latest summaries_vN.md
 ```
 
 ## Commands
@@ -84,6 +92,73 @@ python yttranscribe.py VIDEO_URL --webshare-user USER --webshare-pass PASS
 
 When no proxy credentials are provided, requests go direct (unchanged behaviour).
 
+## Summarize
+
+Generate a Claude-powered summary for each transcribed video, appended to a single markdown file.
+
+```
+python summarize.py <dir>/ [--prompt-file summary_prompt.txt] [-o summaries.md] [--concurrency 10]
+```
+
+- `--prompt-file` — custom summarization prompt (defaults to a built-in "key points + bullet points" prompt)
+- `--concurrency` — max parallel API calls (default: 5)
+- Resumable: already-summarized video IDs are detected and skipped on re-run
+
+## Analyze
+
+Run a chunked analysis over summaries using a prompt file. Summaries are split into batches, each sent to Claude, and responses are concatenated.
+
+```
+python analyze.py <dir>/ --prompt-file <prompt.txt> [--batch-size 20] [-o analysis.md] [--concurrency 5]
+```
+
+Included prompt files:
+
+| File | Purpose |
+|------|---------|
+| `find_outliers.txt` | Identify off-topic / promotional / non-teaching videos |
+| `categorize.txt` | Categorize videos by theme (Resume, Interview Prep, etc.) |
+
+Auto-detects the latest `summaries_vN.md` in the directory (falls back to `summaries.md`). Output defaults to `<dir>/analysis.md` (always overwritten).
+
+## Prune
+
+Remove outlier videos identified by `analyze.py` from the summaries file.
+
+```
+python prune.py <dir>/ [--analysis analysis.md] [--overwrite] [-o output.md]
+```
+
+- By default reads `<dir>/analysis.md` and the latest `summaries_vN.md`
+- Writes a new versioned file: `summaries_v2.md`, `summaries_v3.md`, etc.
+- `--overwrite` — replace the source file in place instead of versioning
+- `-o` — explicit output path
+
+## Split
+
+Split summaries into per-category files based on categorization analysis.
+
+```
+python analyze.py <dir>/ --prompt-file categorize.txt    # writes analysis.md with categories + URLs
+python split.py <dir>/                                    # reads analysis.md + latest summaries → categories/
+```
+
+- Reads `analysis.md` for category assignments (matched by URL)
+- Writes one markdown file per category into `<dir>/categories/` (e.g. `interview_prep.md`, `resume_and_applications.md`)
+- Sections with no matching URL go to `uncategorized.md`
+- `--analysis` — custom analysis file path
+- `-o` — custom output directory (default: `<dir>/categories/`)
+
+### Iterative analyze → prune loop
+
+```bash
+python analyze.py output/ --prompt-file find_outliers.txt   # reads summaries.md → writes analysis.md
+python prune.py output/                                      # reads analysis.md + summaries.md → writes summaries_v2.md
+python analyze.py output/ --prompt-file find_outliers.txt   # reads summaries_v2.md → overwrites analysis.md
+python prune.py output/                                      # reads analysis.md + summaries_v2.md → writes summaries_v3.md
+# repeat until "No outlier URLs found"
+```
+
 ## Output structure
 
 ```
@@ -92,14 +167,23 @@ output/
   transcripts/
     2025-01-15_<video-id>.md          # markdown with YAML frontmatter
     2025-01-20_<video-id>.md
+  summaries.md                        # initial summaries (all videos)
+  summaries_v2.md                     # after first prune pass
+  summaries_v3.md                     # after second prune pass, etc.
+  analysis.md                         # latest analysis output (always overwritten)
+  categories/                         # per-category split files (from split.py)
+    interview_prep.md
+    resume_and_applications.md
+    ...
 ```
 
-Re-running skips already-transcribed videos (resumable).
+Re-running transcription/summarization skips already-completed items (resumable).
 
 ## Standalone scripts
 
 | Script | Purpose |
 |--------|---------|
 | `getaudio.py` | Download audio from a single YouTube video |
-| `yttranscribe.py` | Download YouTube captions for a single video |
+| `yttranscribe.py` | Download YouTube captions for a single video (supports `--chat` for interactive Q&A via OpenAI) |
 | `transcribe.py` | Transcribe audio with AssemblyAI + enhance with Claude |
+| `recorder.py` | Screen + audio recorder for Linux using ffmpeg (unrelated utility) |

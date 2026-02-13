@@ -10,6 +10,8 @@ Categorize each video below into one of these themes:
 - Other
 
 For each video, output one line in this format:
-**[Video Title]** — Category — one-sentence reason
+**[Video Title]** — Category — one-sentence reason — https://www.youtube.com/watch?v=ID
+
+Include the full YouTube URL from the video's **URL:** metadata so it can be matched programmatically.
 
 At the end, add a count summary showing how many videos fall into each category.

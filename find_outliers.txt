@@ -8,7 +8,9 @@ Identify any videos that seem like outliers — ones that don't belong with the 
 - The video covers something extremely niche or one-off compared to the recurring themes
 
 For each outlier, output one line:
-**[Video Title]** — short reason it stands out
+**[Video Title]** — short reason it stands out — https://www.youtube.com/watch?v=ID
+
+Include the full YouTube URL from the video's **URL:** metadata so it can be matched programmatically.
 
 If no videos in this batch seem like outliers, say "No outliers in this batch."
 

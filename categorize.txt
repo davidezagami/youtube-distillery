@@ -1,0 +1,15 @@
+Categorize each video below into one of these themes:
+
+- Resume & Applications
+- Interview Prep
+- Networking & Outreach
+- Salary & Negotiation
+- Career Strategy & Mindset
+- Job Search Tactics
+- Leadership & Management
+- Other
+
+For each video, output one line in this format:
+**[Video Title]** — Category — one-sentence reason
+
+At the end, add a count summary showing how many videos fall into each category.

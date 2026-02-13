@@ -1,0 +1,15 @@
+You are given a batch of video summaries from the same channel. Most videos share a common topic and teaching style.
+
+Identify any videos that seem like outliers — ones that don't belong with the rest. Use these heuristics:
+
+- The video teaches a noticeably different subject than the majority
+- The video doesn't actually teach anything (e.g. it just lists resources, books, or tools without explanation)
+- The video is promotional, a channel update, or a Q&A grab-bag rather than a focused lesson
+- The video covers something extremely niche or one-off compared to the recurring themes
+
+For each outlier, output one line:
+**[Video Title]** — short reason it stands out
+
+If no videos in this batch seem like outliers, say "No outliers in this batch."
+
+Do NOT flag videos just because they cover a subtopic — only flag ones that genuinely feel out of place.

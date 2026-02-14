@@ -21,21 +21,21 @@ brew install ffmpeg               # macOS
 ## Quick start
 
 ```bash
-# 1. Fetch video list from a channel (after a date)
+# 1. Fetch video list from a channel (after a date) — output goes to output/<channel>/
 python channeltool.py fetch https://www.youtube.com/@SomeChannel --after 2025-01-01 -o ./output
 
 # 2. Transcribe all pending videos (YouTube captions only — no API keys needed)
-python channeltool.py transcribe -o ./output
+python channeltool.py transcribe -o ./output/SomeChannel
 
 # 3. Or do both in one step
 python channeltool.py run https://www.youtube.com/@SomeChannel --after 2025-01-01 -o ./output
 
-# 4. Summarize all transcripts
-python summarize.py output/ --prompt-file summary_prompt.txt
+# 4. Summarize all transcripts (pass the channel-specific directory)
+python summarize.py output/SomeChannel/ --prompt-file summary_prompt.txt
 
 # 5. Analyze summaries for outliers, then prune them (repeatable loop)
-python analyze.py output/ --prompt-file find_outliers.txt
-python prune.py output/
+python analyze.py output/SomeChannel/ --prompt-file find_outliers.txt
+python prune.py output/SomeChannel/
 # Re-run analyze + prune until no outliers remain — each cycle auto-detects the latest summaries_vN.md
 ```
 
@@ -47,14 +47,15 @@ Scans a YouTube channel's videos tab, filters by date and duration (≥120s, exc
 
 ```
 python channeltool.py fetch <channel_url> --after YYYY-MM-DD -o ./output
+# Creates output/<channel>/index.json
 ```
 
 ### `transcribe`
 
-Transcribes all `pending` videos in `index.json`. Tries YouTube captions first; falls back to AssemblyAI + Claude if API keys are provided.
+Transcribes all `pending` videos in `index.json`. Tries YouTube captions first; falls back to AssemblyAI + Claude if API keys are provided. Takes the channel-specific directory (e.g. `output/SomeChannel`).
 
 ```
-python channeltool.py transcribe -o ./output [--enhance] [--no-timestamps] [--lang LANG] [--assemblyai-key KEY] [--anthropic-key KEY]
+python channeltool.py transcribe -o ./output/SomeChannel [--enhance] [--no-timestamps] [--lang LANG] [--assemblyai-key KEY] [--anthropic-key KEY]
 ```
 
 - `--enhance` — run YouTube captions through Claude for readability cleanup (off by default)
@@ -68,6 +69,7 @@ Fetch + transcribe in one step. Accepts all options from both commands.
 
 ```
 python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output [--enhance] [--no-timestamps] [--lang LANG]
+# Creates output/<channel>/ with index.json + transcripts/
 ```
 
 ## Proxy support
@@ -152,28 +154,33 @@ python split.py <dir>/                                    # reads analysis.md + 
 ### Iterative analyze → prune loop
 
 ```bash
-python analyze.py output/ --prompt-file find_outliers.txt   # reads summaries.md → writes analysis.md
-python prune.py output/                                      # reads analysis.md + summaries.md → writes summaries_v2.md
-python analyze.py output/ --prompt-file find_outliers.txt   # reads summaries_v2.md → overwrites analysis.md
-python prune.py output/                                      # reads analysis.md + summaries_v2.md → writes summaries_v3.md
+python analyze.py output/SomeChannel/ --prompt-file find_outliers.txt   # reads summaries.md → writes analysis.md
+python prune.py output/SomeChannel/                                      # reads analysis.md + summaries.md → writes summaries_v2.md
+python analyze.py output/SomeChannel/ --prompt-file find_outliers.txt   # reads summaries_v2.md → overwrites analysis.md
+python prune.py output/SomeChannel/                                      # reads analysis.md + summaries_v2.md → writes summaries_v3.md
 # repeat until "No outlier URLs found"
 ```
 
 ## Output structure
 
+`fetch` and `run` automatically organize output by channel name:
+
 ```
 output/
-  index.json                          # manifest with video metadata + status
-  transcripts/
-    2025-01-15_<video-id>.md          # markdown with YAML frontmatter
-    2025-01-20_<video-id>.md
-  summaries.md                        # initial summaries (all videos)
-  summaries_v2.md                     # after first prune pass
-  summaries_v3.md                     # after second prune pass, etc.
-  analysis.md                         # latest analysis output (always overwritten)
-  categories/                         # per-category split files (from split.py)
-    interview_prep.md
-    resume_and_applications.md
+  SomeChannel/                          # auto-created from @SomeChannel URL
+    index.json                          # manifest with video metadata + channel info
+    transcripts/
+      2025-01-15_<video-id>.md          # markdown with YAML frontmatter
+      2025-01-20_<video-id>.md
+    summaries.md                        # initial summaries (all videos)
+    summaries_v2.md                     # after first prune pass
+    summaries_v3.md                     # after second prune pass, etc.
+    analysis.md                         # latest analysis output (always overwritten)
+    categories/                         # per-category split files (from split.py)
+      interview_prep.md
+      resume_and_applications.md
+      ...
+  AnotherChannel/                       # another channel's data
     ...
 ```
 

@@ -6,9 +6,9 @@ transcribes each (YouTube captions preferred, AssemblyAI as fallback),
 and stores structured results for later LLM-based summarization.
 
 Usage:
-    python channeltool.py fetch <channel_url> --after YYYY-MM-DD -o ./output
-    python channeltool.py transcribe -o ./output [--enhance] [--no-timestamps] [--lang LANG]
-    python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output [--enhance] [--no-timestamps] [--lang LANG]
+    python channeltool.py fetch <channel_url> --after YYYY-MM-DD -o ./output     # → output/<channel>/
+    python channeltool.py transcribe -o ./output/<channel> [--enhance] [--no-timestamps] [--lang LANG]
+    python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output       # → output/<channel>/
 """
 
 import argparse
@@ -30,6 +30,25 @@ from yttranscribe import (
     format_timestamp,
 )
 from transcribe import Transcriber, Enhancer, prepare_text_chunks
+
+
+# ---------------------------------------------------------------------------
+# Channel URL helpers
+# ---------------------------------------------------------------------------
+
+def extract_channel_slug(channel_url: str) -> str:
+    """Extract a channel slug from a YouTube channel URL.
+
+    Examples:
+        https://www.youtube.com/@andylacivita        → andylacivita
+        https://www.youtube.com/@SomeChannel/videos  → SomeChannel
+    """
+    path = channel_url.rstrip("/").removesuffix("/videos").rstrip("/")
+    # Find the @handle segment
+    for segment in reversed(path.split("/")):
+        if segment.startswith("@"):
+            return segment[1:]
+    raise ValueError(f"Cannot extract channel handle from URL: {channel_url}")
 
 
 # ---------------------------------------------------------------------------
@@ -360,17 +379,22 @@ def process_videos(
 # CLI
 # ---------------------------------------------------------------------------
 
-def cmd_fetch(args: argparse.Namespace) -> int:
-    output_dir = Path(args.output)
+def _do_fetch(output_dir: Path, channel_url: str, after_date: str) -> int:
+    """Fetch channel videos to the given output directory."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    videos = fetch_channel_videos(args.channel_url, args.after)
+    videos = fetch_channel_videos(channel_url, after_date)
     if not videos:
         print("No new videos found.")
         return 0
 
     # Merge into existing index (avoid duplicates)
     index = load_index(output_dir)
+    if "channel" not in index:
+        index["channel"] = {
+            "url": channel_url.rstrip("/").removesuffix("/videos"),
+            "slug": extract_channel_slug(channel_url),
+        }
     existing_ids = {v["id"] for v in index["videos"]}
     new_count = 0
     for v in videos:
@@ -382,6 +406,12 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     save_index(output_dir, index)
     print(f"Index updated: {new_count} new video(s) added, {len(index['videos'])} total.")
     return 0
+
+
+def cmd_fetch(args: argparse.Namespace) -> int:
+    slug = extract_channel_slug(args.channel_url)
+    output_dir = Path(args.output) / slug
+    return _do_fetch(output_dir, args.channel_url, args.after)
 
 
 def cmd_transcribe(args: argparse.Namespace) -> int:
@@ -416,9 +446,13 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    rc = cmd_fetch(args)
+    slug = extract_channel_slug(args.channel_url)
+    output_dir = Path(args.output) / slug
+    rc = _do_fetch(output_dir, args.channel_url, args.after)
     if rc != 0:
         return rc
+    # Point transcribe at the resolved channel dir
+    args.output = str(output_dir)
     return cmd_transcribe(args)
 
 
@@ -435,13 +469,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch.add_argument("--after", required=True,
                          help="Only include videos uploaded on or after this date (YYYY-MM-DD)")
     p_fetch.add_argument("-o", "--output", default="./output",
-                         help="Output directory (default: ./output)")
+                         help="Base output directory; files go to <output>/<channel>/ (default: ./output)")
     p_fetch.set_defaults(func=cmd_fetch)
 
     # -- transcribe --
     p_trans = sub.add_parser("transcribe", help="Transcribe all pending videos in the index")
     p_trans.add_argument("-o", "--output", default="./output",
-                         help="Output directory (default: ./output)")
+                         help="Channel output directory containing index.json (default: ./output)")
     p_trans.add_argument("--enhance", action="store_true",
                          help="Enhance YouTube captions with Claude for readability")
     p_trans.add_argument("--no-timestamps", action="store_true",
@@ -461,7 +495,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--after", required=True,
                        help="Only include videos uploaded on or after this date (YYYY-MM-DD)")
     p_run.add_argument("-o", "--output", default="./output",
-                       help="Output directory (default: ./output)")
+                       help="Base output directory; files go to <output>/<channel>/ (default: ./output)")
     p_run.add_argument("--enhance", action="store_true",
                        help="Enhance YouTube captions with Claude for readability")
     p_run.add_argument("--no-timestamps", action="store_true",

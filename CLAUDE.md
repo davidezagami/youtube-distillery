@@ -18,14 +18,14 @@ API keys via env vars: `ANTHROPIC_API_KEY`, `ASSEMBLYAI_API_KEY`. Optional proxy
 
 ## Pipeline
 
-The typical workflow processes one channel directory (e.g. `all_results/andylacivita/`):
+The typical workflow processes one channel directory (e.g. `output/andylacivita/`):
 
-1. **Fetch + Transcribe** — `python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output`
-2. **Summarize** — `python summarize.py <dir>/ --prompt-file summary_prompt.txt` → writes `summaries.md`
-3. **Analyze** — `python analyze.py <dir>/ --prompt-file find_outliers.txt` → writes `analysis.md`
-4. **Prune** — `python prune.py <dir>/` → reads `analysis.md`, writes `summaries_v2.md`
+1. **Fetch + Transcribe** — `python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output` → creates `output/<channel>/`
+2. **Summarize** — `python summarize.py output/<channel>/ --prompt-file summary_prompt.txt` → writes `summaries.md`
+3. **Analyze** — `python analyze.py output/<channel>/ --prompt-file find_outliers.txt` → writes `analysis.md`
+4. **Prune** — `python prune.py output/<channel>/` → reads `analysis.md`, writes `summaries_v2.md`
 5. Repeat steps 3–4: analyze picks up latest `summaries_vN.md` automatically, prune writes `summaries_v(N+1).md`
-6. **Categorize + Split** — `python analyze.py <dir>/ --prompt-file categorize.txt` → `analysis.md`, then `python split.py <dir>/` → `categories/*.md`
+6. **Categorize + Split** — `python analyze.py output/<channel>/ --prompt-file categorize.txt` → `analysis.md`, then `python split.py output/<channel>/` → `categories/*.md`
 
 ## Key Architecture Details
 
@@ -44,7 +44,7 @@ The typical workflow processes one channel directory (e.g. `all_results/andylaci
 
 | Script | Input | Output |
 |---|---|---|
-| `channeltool.py` | YouTube channel URL | `index.json` + `transcripts/*.md` |
+| `channeltool.py` | YouTube channel URL | `<output>/<channel>/index.json` + `transcripts/*.md` |
 | `summarize.py` | `index.json` + transcripts | `summaries.md` |
 | `analyze.py` | `summaries[_vN].md` + prompt file | `analysis.md` |
 | `prune.py` | `summaries[_vN].md` + `analysis.md` | `summaries_v(N+1).md` |

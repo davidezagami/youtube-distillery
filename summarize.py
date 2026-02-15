@@ -146,6 +146,8 @@ async def summarize_all(
     model: str,
     prompt_template: str,
     concurrency: int,
+    index: dict,
+    index_path: Path,
 ) -> int:
     """Summarize all videos concurrently, appending each result to output_path.
 
@@ -167,6 +169,8 @@ async def summarize_all(
         async with write_lock:
             with open(output_path, "a", encoding="utf-8") as f:
                 f.write(format_one(video, summary))
+            video["status"] = "summarized"
+            index_path.write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             completed += 1
             print(f"  [{completed}/{total}] {video['title']}")
 
@@ -190,6 +194,8 @@ def main() -> int:
                         help="Anthropic model (or ANTHROPIC_MODEL env)")
     parser.add_argument("--concurrency", type=int, default=5,
                         help="Max parallel API calls (default: 5)")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Max number of videos to summarize in this run")
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
@@ -231,11 +237,16 @@ def main() -> int:
         print("All videos already summarized.")
         return 0
 
+    if args.limit and len(videos) > args.limit:
+        videos = videos[:args.limit]
+        print(f"Limiting to {args.limit} videos.")
+
     print(f"Summarizing {len(videos)} transcripts with {model} (concurrency={args.concurrency})...\n")
 
     client = anthropic.AsyncAnthropic(api_key=api_key)
     written = asyncio.run(
-        summarize_all(videos, input_dir, output_path, client, model, prompt, args.concurrency)
+        summarize_all(videos, input_dir, output_path, client, model, prompt, args.concurrency,
+                      index, index_path)
     )
 
     print(f"\nDone. {written} summaries appended to {output_path}")

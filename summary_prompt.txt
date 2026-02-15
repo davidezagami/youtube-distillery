@@ -1,1 +1,6 @@
-Does this video explicitly list N things about a topic? If so, describe those N things the video talks about. If that's not what the video is doing, summarize the transcript in {bullet_count} bullet points.
+Does this video explicitly list N things about a topic? If so, for each item:
+- State the item clearly
+- Include the key supporting detail, reasoning, or examples the speaker provides
+- Keep each item to 2-4 sentences max
+
+If the video doesn't follow a list structure, summarize the transcript in {bullet_count} bullet points, including key reasoning and examples.

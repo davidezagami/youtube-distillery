@@ -7,7 +7,7 @@ and stores structured results for later LLM-based summarization.
 
 Usage:
     python channeltool.py fetch <channel_url> --after YYYY-MM-DD -o ./output     # → output/<channel>/
-    python channeltool.py transcribe -o ./output/<channel> [--enhance] [--no-timestamps] [--lang LANG]
+    python channeltool.py transcribe -o ./output/<channel> [--enhance] [--include-timestamps] [--lang LANG]
     python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output       # → output/<channel>/
 """
 
@@ -439,7 +439,7 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
         anthropic_key=anthropic_key,
         anthropic_model=anthropic_model,
         lang=args.lang,
-        timestamps=not args.no_timestamps,
+        timestamps=args.include_timestamps,
         proxy_config=proxy_config,
     )
     return 0
@@ -478,8 +478,8 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Channel output directory containing index.json (default: ./output)")
     p_trans.add_argument("--enhance", action="store_true",
                          help="Enhance YouTube captions with Claude for readability")
-    p_trans.add_argument("--no-timestamps", action="store_true",
-                         help="Strip timestamps for clean text output")
+    p_trans.add_argument("--include-timestamps", action="store_true",
+                         help="Include timestamps in transcript output")
     p_trans.add_argument("--lang", default="en",
                          help="Caption language code (default: en)")
     p_trans.add_argument("--assemblyai-key", help="AssemblyAI API key (or ASSEMBLYAI_API_KEY env)")
@@ -498,8 +498,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Base output directory; files go to <output>/<channel>/ (default: ./output)")
     p_run.add_argument("--enhance", action="store_true",
                        help="Enhance YouTube captions with Claude for readability")
-    p_run.add_argument("--no-timestamps", action="store_true",
-                       help="Strip timestamps for clean text output")
+    p_run.add_argument("--include-timestamps", action="store_true",
+                       help="Include timestamps in transcript output")
     p_run.add_argument("--lang", default="en",
                        help="Caption language code (default: en)")
     p_run.add_argument("--assemblyai-key", help="AssemblyAI API key (or ASSEMBLYAI_API_KEY env)")

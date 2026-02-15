@@ -19,6 +19,8 @@ import re
 import sys
 from pathlib import Path
 
+import math
+
 import anthropic
 
 DEFAULT_PROMPT = (
@@ -33,6 +35,27 @@ def load_prompt(path: str | None) -> str:
     if path is None:
         return DEFAULT_PROMPT
     return Path(path).read_text(encoding="utf-8").strip()
+
+
+def compute_bullet_count(duration_seconds: int) -> int:
+    """Compute bullet point count from video duration.
+
+    Roughly one bullet per 1.5 minutes, minimum 10.
+    """
+    return max(10, math.ceil(duration_seconds / 90))
+
+
+def render_prompt(template: str, video: dict) -> str:
+    """Render a prompt template with per-video parameters.
+
+    Supports {bullet_count} placeholder. If no placeholders are present,
+    the template is returned as-is.
+    """
+    bullet_count = compute_bullet_count(video.get("duration", 600))
+    try:
+        return template.format(bullet_count=bullet_count)
+    except KeyError:
+        return template
 
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
@@ -120,7 +143,7 @@ async def summarize_all(
     output_path: Path,
     client: anthropic.AsyncAnthropic,
     model: str,
-    prompt: str,
+    prompt_template: str,
     concurrency: int,
 ) -> int:
     """Summarize all videos concurrently, appending each result to output_path.
@@ -137,6 +160,7 @@ async def summarize_all(
         transcript_path = input_dir / video["transcript_file"]
         text = transcript_path.read_text(encoding="utf-8")
         _meta, body = parse_frontmatter(text)
+        prompt = render_prompt(prompt_template, video)
         summary = await summarize_one(client, model, prompt, video["title"], body, semaphore)
 
         async with write_lock:

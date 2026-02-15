@@ -14,6 +14,8 @@ from pathlib import Path
 
 URL_PATTERN = re.compile(r"https://www\.youtube\.com/watch\?v=[A-Za-z0-9_-]+")
 
+SECTION_SEP = "-" * 36
+
 SEP = r"\s*[-\u2014\u2013]{1,3}\s*"
 CATEGORIZATION_PATTERN = re.compile(
     r"\*\*(.+?)\*\*" + SEP + r"(.+?)" + SEP + r".+?" + SEP +
@@ -35,8 +37,8 @@ def find_latest_summaries(input_dir: Path) -> Path:
 
 
 def parse_sections(text: str) -> list[str]:
-    """Split summaries.md on '\\n---\\n' separator, dropping empty sections."""
-    parts = text.split("\n---\n")
+    """Split summaries.md on section separator, dropping empty sections."""
+    parts = text.split("\n" + SECTION_SEP + "\n")
     return [s.strip() for s in parts if s.strip()]
 
 
@@ -121,7 +123,7 @@ def main() -> int:
         slug = slugify_category(category)
         filename = f"{slug}.md"
         out_path = out_dir / filename
-        out_path.write_text("\n---\n".join(cat_sections) + "\n", encoding="utf-8")
+        out_path.write_text(("\n" + SECTION_SEP + "\n").join(cat_sections) + "\n", encoding="utf-8")
         print(f"{category:<30} {filename:<40} {len(cat_sections):>5}")
 
     print(f"\nWrote {len(categories)} category files to {out_dir}/")

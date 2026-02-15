@@ -15,6 +15,8 @@ from pathlib import Path
 
 URL_PATTERN = re.compile(r"https://www\.youtube\.com/watch\?v=[A-Za-z0-9_-]+")
 
+SECTION_SEP = "-" * 36
+
 
 def find_latest_summaries(input_dir: Path) -> Path:
     """Find the highest-versioned summaries file, falling back to summaries.md."""
@@ -35,8 +37,8 @@ def extract_outlier_urls(analysis_text: str) -> set[str]:
 
 
 def parse_sections(text: str) -> list[str]:
-    """Split summaries.md on '\\n---\\n' separator, dropping empty sections."""
-    parts = text.split("\n---\n")
+    """Split summaries.md on section separator, dropping empty sections."""
+    parts = text.split("\n" + SECTION_SEP + "\n")
     return [s.strip() for s in parts if s.strip()]
 
 
@@ -104,7 +106,7 @@ def main() -> int:
         out_path = next_version_path(summaries_path)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text("\n---\n".join(kept) + "\n", encoding="utf-8")
+    out_path.write_text(("\n" + SECTION_SEP + "\n").join(kept) + "\n", encoding="utf-8")
     print(f"Removed {removed} outliers ({len(kept)} remaining). Written to {out_path}")
     return 0
 

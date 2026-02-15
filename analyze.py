@@ -17,6 +17,8 @@ from pathlib import Path
 
 import anthropic
 
+SECTION_SEP = "-" * 36
+
 
 def find_latest_summaries(input_dir: Path) -> Path:
     """Find the highest-versioned summaries file, falling back to summaries.md."""
@@ -32,8 +34,8 @@ def find_latest_summaries(input_dir: Path) -> Path:
 
 
 def parse_sections(text: str) -> list[str]:
-    """Split summaries.md on '\\n---\\n' separator, dropping empty sections."""
-    parts = text.split("\n---\n")
+    """Split summaries.md on section separator, dropping empty sections."""
+    parts = text.split("\n" + SECTION_SEP + "\n")
     return [s.strip() for s in parts if s.strip()]
 
 
@@ -42,7 +44,7 @@ def batch_sections(sections: list[str], batch_size: int) -> list[str]:
     batches = []
     for i in range(0, len(sections), batch_size):
         chunk = sections[i : i + batch_size]
-        batches.append("\n\n---\n\n".join(chunk))
+        batches.append(("\n" + SECTION_SEP + "\n").join(chunk))
     return batches
 
 
@@ -155,7 +157,7 @@ def main() -> int:
         analyze_all(batches, client, model, prompt, args.concurrency)
     )
 
-    output_path.write_text("\n\n---\n\n".join(results) + "\n", encoding="utf-8")
+    output_path.write_text(("\n" + SECTION_SEP + "\n").join(results) + "\n", encoding="utf-8")
     print(f"\nDone. Results written to {output_path}")
     return 0
 

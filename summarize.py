@@ -92,12 +92,13 @@ def parse_completed_ids(output_path: Path) -> set[str]:
 
 def format_one(video: dict, summary: str) -> str:
     """Format a single video section."""
+    sep = "-" * 36
     return (
         f"# {video['title']}\n"
         f"**Date:** {video['upload_date']} | "
         f"**URL:** {video['url']}\n\n"
         f"{summary}\n\n"
-        f"---\n\n"
+        f"{sep}\n\n"
     )
 
 

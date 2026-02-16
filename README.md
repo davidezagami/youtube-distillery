@@ -149,19 +149,26 @@ python prune.py <dir>/ [--analysis analysis.md] [--overwrite] [-o output.md]
 
 ## Categorize + Split
 
-Two-pass categorization: discover themes from titles, then assign each video using full summaries.
+Full pipeline after summarization: prune outliers, then discover and assign categories.
 
 ```bash
-# 1. Discover categories from titles only (lightweight, single API call)
+# 1. Find outliers (off-topic, vlogs, promos)
+python analyze.py <dir>/ --prompt-file find_outliers.txt --batch-size 20
+
+# 2. Prune them from summaries (creates summaries_v2.md, v3, etc.)
+python prune.py <dir>/
+# Repeat steps 1-2 until no outliers remain
+
+# 3. Discover categories from titles only (lightweight, single API call)
 python analyze.py <dir>/ --prompt-file discover_categories.txt --titles-only
 
-# 2. Build the categorization prompt with discovered categories
+# 4. Build the categorization prompt with discovered categories
 python build_prompt.py <dir>/analysis.md
 
-# 3. Categorize videos using full summaries (batched)
-python analyze.py <dir>/ --prompt-file categorize_run.txt --batch-size 11
+# 5. Categorize videos using full summaries (batched)
+python analyze.py <dir>/ --prompt-file categorize_run.txt --batch-size 20
 
-# 4. Split into per-category files
+# 6. Split into per-category files
 python split.py <dir>/
 ```
 

@@ -4,10 +4,18 @@ Fetch, transcribe, summarize, and curate videos from YouTube channels. YouTube c
 
 ## Setup
 
-Requires Python 3.10+.
+Requires Python 3.10+. A conda environment file is included:
 
 ```bash
-conda activate <your-env>        # or create a new one: conda create -n recorders python=3.11
+conda env create -f environment.yml   # creates the 'transcriber' env with all deps
+conda activate transcriber
+```
+
+Or set up manually:
+
+```bash
+conda create -n transcriber python=3.11
+conda activate transcriber
 pip install -r requirements.txt
 ```
 
@@ -114,12 +122,15 @@ Run a chunked analysis over summaries using a prompt file. Summaries are split i
 python analyze.py <dir>/ --prompt-file <prompt.txt> [--batch-size 20] [-o analysis.md] [--concurrency 5]
 ```
 
+- `--titles-only` — send only video titles (not full summaries) in a single API call; useful for lightweight discovery tasks
+
 Included prompt files:
 
 | File | Purpose |
 |------|---------|
 | `find_outliers.txt` | Identify off-topic / promotional / non-teaching videos |
-| `categorize.txt` | Categorize videos by theme (Resume, Interview Prep, etc.) |
+| `discover_categories.txt` | Discover natural themes from video titles (used with `--titles-only`) |
+| `categorize_template.txt` | Template for categorization with `{categories}` placeholder |
 
 Auto-detects the latest `summaries_vN.md` in the directory (falls back to `summaries.md`). Output defaults to `<dir>/analysis.md` (always overwritten).
 
@@ -136,14 +147,25 @@ python prune.py <dir>/ [--analysis analysis.md] [--overwrite] [-o output.md]
 - `--overwrite` — replace the source file in place instead of versioning
 - `-o` — explicit output path
 
-## Split
+## Categorize + Split
 
-Split summaries into per-category files based on categorization analysis.
+Two-pass categorization: discover themes from titles, then assign each video using full summaries.
 
+```bash
+# 1. Discover categories from titles only (lightweight, single API call)
+python analyze.py <dir>/ --prompt-file discover_categories.txt --titles-only
+
+# 2. Build the categorization prompt with discovered categories
+python build_prompt.py <dir>/analysis.md
+
+# 3. Categorize videos using full summaries (batched)
+python analyze.py <dir>/ --prompt-file categorize_run.txt --batch-size 11
+
+# 4. Split into per-category files
+python split.py <dir>/
 ```
-python analyze.py <dir>/ --prompt-file categorize.txt    # writes analysis.md with categories + URLs
-python split.py <dir>/                                    # reads analysis.md + latest summaries → categories/
-```
+
+Edit the number in `discover_categories.txt` ("Identify 5 natural themes...") to control granularity. `build_prompt.py` injects the discovered categories into `categorize_template.txt` and writes `categorize_run.txt`.
 
 - Reads `analysis.md` for category assignments (matched by URL)
 - Writes one markdown file per category into `<dir>/categories/` (e.g. `interview_prep.md`, `resume_and_applications.md`)

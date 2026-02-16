@@ -1,6 +1,6 @@
 You are given a list of video titles from a single YouTube channel.
 
-Identify 5 natural themes that best group these videos.
+Identify between 4 and 8 natural themes that best group these videos — use as many as the content warrants.
 - Categories should be roughly balanced (avoid one category with 80% of videos).
 - Use clear, descriptive names.
 

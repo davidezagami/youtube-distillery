@@ -1,13 +1,12 @@
-Categorize each video below into one of these themes:
+Read all the video summaries below.
 
-- Resume & Applications
-- Interview Prep
-- Networking & Outreach
-- Salary & Negotiation
-- Career Strategy & Mindset
-- Job Search Tactics
-- Leadership & Management
-- Other
+1. Identify 5 natural themes that best group this content.
+   - Categories should be roughly balanced (avoid one category with 80% of videos).
+   - Use clear, descriptive names.
+
+2. Assign each video to exactly one category.
+
+This output will be parsed programmatically. Follow the format exactly — no extra text before or after each video line.
 
 For each video, output one line in this format:
 **[Video Title]** — Category — one-sentence reason — https://www.youtube.com/watch?v=ID

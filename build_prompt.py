@@ -6,6 +6,8 @@ Usage:
     python build_prompt.py output/Farah_Sharghi/analysis.md --template categorize_template.txt -o categorize_run.txt
 """
 
+from __future__ import annotations
+
 import argparse
 import re
 import sys

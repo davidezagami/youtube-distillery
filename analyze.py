@@ -39,6 +39,17 @@ def parse_sections(text: str) -> list[str]:
     return [s.strip() for s in parts if s.strip()]
 
 
+def extract_titles(sections: list[str]) -> str:
+    """Extract the first '# ' heading from each section, return as numbered list."""
+    titles = []
+    for section in sections:
+        for line in section.splitlines():
+            if line.startswith("# "):
+                titles.append(line[2:].strip())
+                break
+    return "\n".join(f"{i+1}. {t}" for i, t in enumerate(titles))
+
+
 def batch_sections(sections: list[str], batch_size: int) -> list[str]:
     """Group sections into batches, rejoining each with the original separator."""
     batches = []
@@ -117,6 +128,8 @@ def main() -> int:
                         help="Anthropic model (or ANTHROPIC_MODEL env)")
     parser.add_argument("--concurrency", type=int, default=5,
                         help="Max parallel API calls (default: 5)")
+    parser.add_argument("--titles-only", action="store_true",
+                        help="Send only video titles (not full summaries) in a single call")
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
@@ -148,9 +161,15 @@ def main() -> int:
         print("No summary sections found in summaries.md.")
         return 0
 
-    batches = batch_sections(sections, args.batch_size)
-    print(f"Analyzing {len(sections)} summaries in {len(batches)} batches "
-          f"with {model} (concurrency={args.concurrency})...\n")
+    if args.titles_only:
+        titles_text = extract_titles(sections)
+        print(f"Extracted {len(sections)} titles, sending in a single call "
+              f"with {model}...\n")
+        batches = [titles_text]
+    else:
+        batches = batch_sections(sections, args.batch_size)
+        print(f"Analyzing {len(sections)} summaries in {len(batches)} batches "
+              f"with {model} (concurrency={args.concurrency})...\n")
 
     client = anthropic.AsyncAnthropic(api_key=api_key)
     results = asyncio.run(

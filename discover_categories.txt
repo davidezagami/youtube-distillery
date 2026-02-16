@@ -1,0 +1,12 @@
+You are given a list of video titles from a single YouTube channel.
+
+Identify 5 natural themes that best group these videos.
+- Categories should be roughly balanced (avoid one category with 80% of videos).
+- Use clear, descriptive names.
+
+Output each category on its own line, prefixed with "- ". Nothing else.
+
+Example output:
+- Category Name One
+- Category Name Two
+- Category Name Three

@@ -124,8 +124,9 @@ def call_llm(prompt: str, content: str, api_key: str | None, model: str, max_tok
         ],
     )
     if response.stop_reason == "max_tokens":
-        print(f"\n  WARNING: Output truncated (hit {max_tokens} token limit). "
+        print(f"\n  ERROR: Output truncated (hit {max_tokens} token limit). "
               f"Re-run with --max-tokens {max_tokens * 2} to get full output.")
+        sys.exit(1)
     return response.content[0].text.strip()
 
 

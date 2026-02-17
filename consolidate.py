@@ -114,20 +114,25 @@ Output ONLY the final consolidated reference document in markdown."""
 
 
 def call_llm(prompt: str, content: str, api_key: str | None, model: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> str:
-    """Send a consolidation request to Claude."""
+    """Send a consolidation request to Claude using streaming."""
     client = anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(
+    result_parts = []
+    stop_reason = None
+    with client.messages.stream(
         model=model,
         max_tokens=max_tokens,
         messages=[
             {"role": "user", "content": f"{prompt}\n\n---\n\n{content}"},
         ],
-    )
-    if response.stop_reason == "max_tokens":
+    ) as stream:
+        for text in stream.text_stream:
+            result_parts.append(text)
+        stop_reason = stream.get_final_message().stop_reason
+    if stop_reason == "max_tokens":
         print(f"\n  ERROR: Output truncated (hit {max_tokens} token limit). "
               f"Re-run with --max-tokens {max_tokens * 2} to get full output.")
         sys.exit(1)
-    return response.content[0].text.strip()
+    return "".join(result_parts).strip()
 
 
 def consolidate_file(

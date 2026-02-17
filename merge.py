@@ -141,7 +141,7 @@ def do_merge(
 
             content = cat["path"].read_text()
             with open(target, "a") as f:
-                f.write(f"\n---\n\n## Source: {channel}\n\n")
+                f.write(f"\n------------------------------------\n\n## Source: {channel}\n\n")
                 f.write(content)
                 f.write("\n")
 

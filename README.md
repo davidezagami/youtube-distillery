@@ -190,6 +190,55 @@ python prune.py output/SomeChannel/                                      # reads
 # repeat until "No outlier URLs found"
 ```
 
+## Cross-Channel Merge
+
+After running the full pipeline on multiple channels, merge their per-channel categories into a unified taxonomy:
+
+```bash
+# Merge categories across all channels (calls Claude once for taxonomy)
+python merge.py output/
+
+# Uses existing taxonomy without re-calling the LLM
+python merge.py output/ --taxonomy-file output/_merged/taxonomy.json
+
+# Dry run — show prompt and taxonomy without writing files
+python merge.py output/ --dry-run
+
+# Control category count bounds (default: 5-10)
+python merge.py output/ --min-categories 5 --max-categories 10
+```
+
+- Reads `output/<channel>/categories/*.md` across all channels
+- LLM proposes a unified taxonomy and maps each channel's categories to it
+- Saves `taxonomy.json` for reproducibility
+- Creates `output/_merged/<category>.md` files with content from all mapped source categories
+- Adding a new channel: run its pipeline independently, then re-run `merge.py`
+
+## Consolidate
+
+Reduce redundancy across merged category files. Many videos from different creators cover the same advice — consolidation deduplicates while preserving unique insights.
+
+```bash
+# Consolidate a single category
+python consolidate.py output/_merged/salary_negotiation_and_compensation.md
+
+# Consolidate all categories
+python consolidate.py output/_merged/ -o output/_consolidated/
+
+# Skip already-consolidated files on re-run
+python consolidate.py output/_merged/ -o output/_consolidated/ --skip-existing
+
+# Dry run — show chunking plan without API calls
+python consolidate.py output/_merged/ --dry-run
+
+# Adjust chunk size (default: 15000 tokens)
+python consolidate.py output/_merged/ --chunk-tokens 12000
+```
+
+- Small categories (< ~30k tokens): single-pass consolidation
+- Large categories: chunked consolidation + final merge pass
+- Output includes stats header (original vs consolidated token count)
+
 ## Output structure
 
 `fetch` and `run` automatically organize output by channel name:
@@ -210,6 +259,15 @@ output/
       resume_and_applications.md
       ...
   AnotherChannel/                       # another channel's data
+    ...
+  _merged/                              # cross-channel unified categories
+    taxonomy.json                       # mapping from per-channel → unified names
+    interview_preparation_and_techniques.md
+    salary_negotiation_and_compensation.md
+    ...
+  _consolidated/                        # deduplicated reference docs
+    interview_preparation_and_techniques.md
+    salary_negotiation_and_compensation.md
     ...
 ```
 

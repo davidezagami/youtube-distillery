@@ -74,11 +74,15 @@ def save_index(output_dir: Path, index: dict) -> None:
 # Fetching channel videos
 # ---------------------------------------------------------------------------
 
-def fetch_channel_videos(channel_url: str, after_date: str) -> list[dict]:
+def fetch_channel_videos(channel_url: str, after_date: str, known_ids: set[str] | None = None) -> list[dict]:
     """Fetch non-Shorts videos from a YouTube channel uploaded after *after_date*.
 
     Returns a list of dicts with keys: id, title, url, upload_date, duration.
+    If *known_ids* is provided, videos already in the set are skipped (no
+    metadata fetch), making re-runs much faster.
     """
+    if known_ids is None:
+        known_ids = set()
     # Normalise to the /videos tab so yt-dlp lists uploads (excludes Shorts)
     if not channel_url.rstrip("/").endswith("/videos"):
         channel_url = channel_url.rstrip("/") + "/videos"
@@ -104,6 +108,7 @@ def fetch_channel_videos(channel_url: str, after_date: str) -> list[dict]:
 
     after_dt = datetime.strptime(after_date, "%Y-%m-%d")
     stale_streak = 0
+    skipped_known = 0
     videos = []
 
     meta_opts = {
@@ -115,6 +120,10 @@ def fetch_channel_videos(channel_url: str, after_date: str) -> list[dict]:
     for i, entry in enumerate(entries):
         video_id = entry.get("id") or entry.get("url")
         if not video_id:
+            continue
+
+        if video_id in known_ids:
+            skipped_known += 1
             continue
 
         video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -170,7 +179,9 @@ def fetch_channel_videos(channel_url: str, after_date: str) -> list[dict]:
 
         time.sleep(0.5)
 
-    print(f"\nCollected {len(videos)} videos after {after_date}.")
+    if skipped_known:
+        print(f"\nSkipped {skipped_known} already-indexed video(s).")
+    print(f"Collected {len(videos)} new video(s) after {after_date}.")
     return videos
 
 
@@ -383,19 +394,18 @@ def _do_fetch(output_dir: Path, channel_url: str, after_date: str) -> int:
     """Fetch channel videos to the given output directory."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    videos = fetch_channel_videos(channel_url, after_date)
+    index = load_index(output_dir)
+    existing_ids = {v["id"] for v in index["videos"]}
+
+    videos = fetch_channel_videos(channel_url, after_date, known_ids=existing_ids)
     if not videos:
         print("No new videos found.")
         return 0
-
-    # Merge into existing index (avoid duplicates)
-    index = load_index(output_dir)
     if "channel" not in index:
         index["channel"] = {
             "url": channel_url.rstrip("/").removesuffix("/videos"),
             "slug": extract_channel_slug(channel_url),
         }
-    existing_ids = {v["id"] for v in index["videos"]}
     new_count = 0
     for v in videos:
         if v["id"] not in existing_ids:

@@ -1,11 +1,11 @@
 Categorize each video below into one of these themes:
 
 - Communication and Articulation Skills
-- Career Strategy and Job Search
-- Interview and Presentation Techniques
-- Personal Development and Mindset
-- Life Updates and Reflections
-- Consulting Frameworks and Methods
+- Interview Preparation and Strategies
+- Consulting Case Interviews and Frameworks
+- Career Development and Workplace Success
+- Mindset and Personal Growth
+- Early Career Challenges and Advice
 
 This output will be parsed programmatically. Follow the format exactly — no extra text before or after each video line.
 

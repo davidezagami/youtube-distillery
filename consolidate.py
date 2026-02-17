@@ -26,7 +26,7 @@ import anthropic
 print = functools.partial(print, flush=True)
 
 DEFAULT_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6")
-DEFAULT_CHUNK_TOKENS = 15_000  # approx tokens per chunk
+DEFAULT_CHUNK_TOKENS = 20_000  # approx tokens per chunk
 DEFAULT_MAX_TOKENS = 32_768
 CHARS_PER_TOKEN = 4  # rough estimate
 SINGLE_PASS_THRESHOLD = 30_000  # tokens; below this, no chunking needed
@@ -59,7 +59,19 @@ def split_into_summaries(text: str) -> list[str]:
 
 
 def chunk_summaries(summaries: list[str], chunk_tokens: int) -> list[list[str]]:
-    """Group summaries into chunks that fit under the token limit."""
+    """Group summaries into balanced chunks that fit under the token limit.
+
+    Instead of greedy bin-packing (which leaves a small runt last chunk),
+    compute the ideal number of chunks and distribute evenly.
+    """
+    import math
+
+    total_tokens = sum(estimate_tokens(s) for s in summaries)
+    num_chunks = math.ceil(total_tokens / chunk_tokens)
+    if num_chunks < 1:
+        num_chunks = 1
+    target = total_tokens / num_chunks
+
     chunks = []
     current_chunk = []
     current_tokens = 0
@@ -67,7 +79,7 @@ def chunk_summaries(summaries: list[str], chunk_tokens: int) -> list[list[str]]:
     for summary in summaries:
         summary_tokens = estimate_tokens(summary)
         # Always put at least one summary per chunk
-        if current_chunk and current_tokens + summary_tokens > chunk_tokens:
+        if current_chunk and current_tokens + summary_tokens > target:
             chunks.append(current_chunk)
             current_chunk = []
             current_tokens = 0
@@ -75,7 +87,11 @@ def chunk_summaries(summaries: list[str], chunk_tokens: int) -> list[list[str]]:
         current_tokens += summary_tokens
 
     if current_chunk:
-        chunks.append(current_chunk)
+        # Fold tiny remainders into the last chunk instead of creating a runt
+        if chunks and current_tokens < target * 0.3:
+            chunks[-1].extend(current_chunk)
+        else:
+            chunks.append(current_chunk)
     return chunks
 
 
@@ -113,26 +129,36 @@ Your task:
 Output ONLY the final consolidated reference document in markdown."""
 
 
-def call_llm(prompt: str, content: str, api_key: str | None, model: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> str:
-    """Send a consolidation request to Claude using streaming."""
+def call_llm(prompt: str, content: str, api_key: str | None, model: str, max_tokens: int = DEFAULT_MAX_TOKENS, retries: int = 3) -> str:
+    """Send a consolidation request to Claude using streaming, with retries."""
     client = anthropic.Anthropic(api_key=api_key)
-    result_parts = []
-    stop_reason = None
-    with client.messages.stream(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "user", "content": f"{prompt}\n\n---\n\n{content}"},
-        ],
-    ) as stream:
-        for text in stream.text_stream:
-            result_parts.append(text)
-        stop_reason = stream.get_final_message().stop_reason
-    if stop_reason == "max_tokens":
-        print(f"\n  ERROR: Output truncated (hit {max_tokens} token limit). "
-              f"Re-run with --max-tokens {max_tokens * 2} to get full output.")
-        sys.exit(1)
-    return "".join(result_parts).strip()
+    for attempt in range(1, retries + 1):
+        try:
+            result_parts = []
+            stop_reason = None
+            with client.messages.stream(
+                model=model,
+                max_tokens=max_tokens,
+                messages=[
+                    {"role": "user", "content": f"{prompt}\n\n---\n\n{content}"},
+                ],
+            ) as stream:
+                for text in stream.text_stream:
+                    result_parts.append(text)
+                stop_reason = stream.get_final_message().stop_reason
+            if stop_reason == "max_tokens":
+                print(f"\n  ERROR: Output truncated (hit {max_tokens} token limit). "
+                      f"Re-run with --max-tokens {max_tokens * 2} to get full output.")
+                sys.exit(1)
+            return "".join(result_parts).strip()
+        except Exception as e:
+            if attempt < retries:
+                wait = attempt * 5
+                print(f"\n  WARN: API error ({e}), retrying in {wait}s (attempt {attempt}/{retries})...", end=" ", flush=True)
+                time.sleep(wait)
+            else:
+                print(f"\n  ERROR: API failed after {retries} attempts: {e}")
+                raise
 
 
 def consolidate_file(

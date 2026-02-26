@@ -1,120 +1,128 @@
 # YouTube Channel Transcription & Analysis Pipeline
 
-Fetch, transcribe, summarize, and curate videos from YouTube channels. YouTube captions preferred, AssemblyAI as fallback. Summaries are generated with Claude, then iteratively analyzed and pruned to remove off-topic content.
+Fetch, transcribe, summarize, and curate videos from YouTube channels. YouTube captions preferred, AssemblyAI as fallback. Summaries are generated with Claude, then iteratively analyzed and pruned to remove off-topic content. Multiple channels can be merged into a unified taxonomy and consolidated into deduplicated reference documents.
 
 ## Setup
 
-Requires Python 3.10+. A conda environment file is included:
+Requires Python 3.10+ and FFmpeg.
 
 ```bash
-conda env create -f environment.yml   # creates the 'transcriber' env with all deps
+# Option A: conda environment file (includes all deps)
+conda env create -f environment.yml
 conda activate transcriber
-```
 
-Or set up manually:
-
-```bash
+# Option B: manual setup
 conda create -n transcriber python=3.11
 conda activate transcriber
 pip install -r requirements.txt
 ```
 
-FFmpeg is also required (for audio download/conversion):
+Install FFmpeg:
 
 ```bash
 sudo apt install ffmpeg           # Debian/Ubuntu
 brew install ffmpeg               # macOS
 ```
 
+### Environment variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `ANTHROPIC_API_KEY` | Yes (for summarize/analyze/consolidate) | Claude API access |
+| `ASSEMBLYAI_API_KEY` | Only if YouTube captions unavailable | AssemblyAI transcription fallback |
+| `ANTHROPIC_MODEL` | No | Override default model (default: `claude-sonnet-4-5-20250929`) |
+| `WEBSHARE_PROXY_USER` | No | Webshare rotating proxy username |
+| `WEBSHARE_PROXY_PASS` | No | Webshare rotating proxy password |
+
+All API keys can also be passed as CLI flags (`--anthropic-key`, `--assemblyai-key`, etc.).
+
 ## Quick start
 
 ```bash
-# 1. Fetch video list from a channel (after a date) — output goes to output/<channel>/
-python channeltool.py fetch https://www.youtube.com/@SomeChannel --after 2025-01-01 -o ./output
-
-# 2. Transcribe all pending videos (YouTube captions only — no API keys needed)
-python channeltool.py transcribe -o ./output/SomeChannel
-
-# 3. Or do both in one step
+# 1. Fetch + transcribe a channel's videos since a date
 python channeltool.py run https://www.youtube.com/@SomeChannel --after 2025-01-01 -o ./output
 
-# 4. Summarize all transcripts (pass the channel-specific directory)
+# 2. Summarize all transcripts
 python summarize.py output/SomeChannel/ --prompt-file summary_prompt.txt
 
-# 5. Analyze summaries for outliers, then prune them (repeatable loop)
+# 3. Iteratively prune outliers
 python analyze.py output/SomeChannel/ --prompt-file find_outliers.txt
 python prune.py output/SomeChannel/
-# Re-run analyze + prune until no outliers remain — each cycle auto-detects the latest summaries_vN.md
+# Repeat until "No outlier URLs found"
+
+# 4. Discover categories, build prompt, categorize, and split
+python analyze.py output/SomeChannel/ --prompt-file discover_categories.txt --titles-only
+python build_prompt.py output/SomeChannel/analysis.md
+python analyze.py output/SomeChannel/ --prompt-file categorize_run.txt --batch-size 20
+python split.py output/SomeChannel/
+```
+
+### Multi-channel workflow
+
+After processing multiple channels individually:
+
+```bash
+# 5. Merge per-channel categories into a unified taxonomy
+python merge.py output/
+
+# 6. Consolidate (deduplicate) across creators
+python consolidate.py output/_merged/ -o output/_consolidated/
 ```
 
 ## Commands
 
-### `fetch`
+### channeltool.py
 
-Scans a YouTube channel's videos tab, filters by date and duration (≥120s, excludes Shorts), and writes `index.json`.
+Three subcommands for fetching and transcribing:
+
+#### `fetch`
+
+Scans a YouTube channel's videos tab, filters by date and duration (>=120s, excludes Shorts), and writes `index.json`.
 
 ```
 python channeltool.py fetch <channel_url> --after YYYY-MM-DD -o ./output
-# Creates output/<channel>/index.json
 ```
 
-### `transcribe`
+#### `transcribe`
 
-Transcribes all `pending` videos in `index.json`. Tries YouTube captions first; falls back to AssemblyAI + Claude if API keys are provided. Takes the channel-specific directory (e.g. `output/SomeChannel`).
+Transcribes all `pending` videos in `index.json`. Tries YouTube captions first; falls back to AssemblyAI + Claude if API keys are provided.
 
 ```
-python channeltool.py transcribe -o ./output/SomeChannel [--enhance] [--no-timestamps] [--lang LANG] [--assemblyai-key KEY] [--anthropic-key KEY]
+python channeltool.py transcribe -o ./output/SomeChannel [--enhance] [--include-timestamps] [--lang LANG]
 ```
 
-- `--enhance` — run YouTube captions through Claude for readability cleanup (off by default)
-- `--no-timestamps` — strip timestamps for clean text output (useful for LLM ingestion)
-- `--lang LANG` — caption language code (default: `en`)
-- API keys can also be set via `ASSEMBLYAI_API_KEY` and `ANTHROPIC_API_KEY` env vars
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--enhance` | off | Run YouTube captions through Claude for readability cleanup |
+| `--include-timestamps` | off | Include timestamps in transcript output |
+| `--lang LANG` | `en` | Caption language code |
+| `--webshare-user` / `--webshare-pass` | env vars | Proxy credentials (see [Proxy support](#proxy-support)) |
 
-### `run`
+#### `run`
 
 Fetch + transcribe in one step. Accepts all options from both commands.
 
 ```
-python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output [--enhance] [--no-timestamps] [--lang LANG]
-# Creates output/<channel>/ with index.json + transcripts/
+python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output [--enhance] [--include-timestamps]
 ```
 
-## Proxy support
-
-YouTube may block transcript requests from cloud provider IPs (or after heavy use). You can route requests through [Webshare](https://www.webshare.io/) rotating residential proxies:
-
-```bash
-# Via CLI flags
-python channeltool.py transcribe -o ./output --webshare-user USER --webshare-pass PASS
-
-# Via environment variables
-export WEBSHARE_PROXY_USER=USER
-export WEBSHARE_PROXY_PASS=PASS
-python channeltool.py run https://www.youtube.com/@SomeChannel --after 2025-01-01 -o ./output
-```
-
-The standalone script also supports the same flags:
-
-```bash
-python yttranscribe.py VIDEO_URL --webshare-user USER --webshare-pass PASS
-```
-
-When no proxy credentials are provided, requests go direct (unchanged behaviour).
-
-## Summarize
+### summarize.py
 
 Generate a Claude-powered summary for each transcribed video, appended to a single markdown file.
 
 ```
-python summarize.py <dir>/ [--prompt-file summary_prompt.txt] [-o summaries.md] [--concurrency 10]
+python summarize.py <dir>/ [--prompt-file summary_prompt.txt] [-o summaries.md] [--concurrency 5] [--limit N]
 ```
 
-- `--prompt-file` — custom summarization prompt (defaults to a built-in "key points + bullet points" prompt)
-- `--concurrency` — max parallel API calls (default: 5)
-- Resumable: already-summarized video IDs are detected and skipped on re-run
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--prompt-file` | built-in prompt | Custom summarization prompt |
+| `--concurrency` | 5 | Max parallel API calls |
+| `--limit` | unlimited | Max videos to summarize in this run |
 
-## Analyze
+Resumable: already-summarized video IDs are detected and skipped on re-run.
+
+### analyze.py
 
 Run a chunked analysis over summaries using a prompt file. Summaries are split into batches, each sent to Claude, and responses are concatenated.
 
@@ -122,19 +130,16 @@ Run a chunked analysis over summaries using a prompt file. Summaries are split i
 python analyze.py <dir>/ --prompt-file <prompt.txt> [--batch-size 20] [-o analysis.md] [--concurrency 5]
 ```
 
-- `--titles-only` — send only video titles (not full summaries) in a single API call; useful for lightweight discovery tasks
-
-Included prompt files:
-
-| File | Purpose |
-|------|---------|
-| `find_outliers.txt` | Identify off-topic / promotional / non-teaching videos |
-| `discover_categories.txt` | Discover natural themes from video titles (used with `--titles-only`) |
-| `categorize_template.txt` | Template for categorization with `{categories}` placeholder |
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--prompt-file` | (required) | Analysis prompt file |
+| `--batch-size` | 20 | Max summaries per API request |
+| `--concurrency` | 5 | Max parallel API calls |
+| `--titles-only` | off | Send only video titles in a single call (for lightweight tasks) |
 
 Auto-detects the latest `summaries_vN.md` in the directory (falls back to `summaries.md`). Output defaults to `<dir>/analysis.md` (always overwritten).
 
-## Prune
+### prune.py
 
 Remove outlier videos identified by `analyze.py` from the summaries file.
 
@@ -145,103 +150,98 @@ python prune.py <dir>/ [--analysis analysis.md] [--overwrite] [-o output.md]
 - By default reads `<dir>/analysis.md` and the latest `summaries_vN.md`
 - Writes a new versioned file: `summaries_v2.md`, `summaries_v3.md`, etc.
 - `--overwrite` — replace the source file in place instead of versioning
-- `-o` — explicit output path
 
-## Categorize + Split
+### split.py
 
-Full pipeline after summarization: prune outliers, then discover and assign categories.
+Split categorized summaries into per-category markdown files.
 
-```bash
-# 1. Find outliers (off-topic, vlogs, promos)
-python analyze.py <dir>/ --prompt-file find_outliers.txt --batch-size 20
-
-# 2. Prune them from summaries (creates summaries_v2.md, v3, etc.)
-python prune.py <dir>/
-# Repeat steps 1-2 until no outliers remain
-
-# 3. Discover categories from titles only (lightweight, single API call)
-python analyze.py <dir>/ --prompt-file discover_categories.txt --titles-only
-
-# 4. Build the categorization prompt with discovered categories
-python build_prompt.py <dir>/analysis.md
-
-# 5. Categorize videos using full summaries (batched)
-python analyze.py <dir>/ --prompt-file categorize_run.txt --batch-size 20
-
-# 6. Split into per-category files
-python split.py <dir>/
 ```
-
-Edit the number in `discover_categories.txt` ("Identify 5 natural themes...") to control granularity. `build_prompt.py` injects the discovered categories into `categorize_template.txt` and writes `categorize_run.txt`.
+python split.py <dir>/ [--analysis analysis.md] [-o <dir>/categories/]
+```
 
 - Reads `analysis.md` for category assignments (matched by URL)
-- Writes one markdown file per category into `<dir>/categories/` (e.g. `interview_prep.md`, `resume_and_applications.md`)
-- Sections with no matching URL go to `uncategorized.md`
-- `--analysis` — custom analysis file path
-- `-o` — custom output directory (default: `<dir>/categories/`)
+- Writes one file per category into `<dir>/categories/`
+- Unmatched sections go to `uncategorized.md`
 
-### Iterative analyze → prune loop
+### build_prompt.py
 
-```bash
-python analyze.py output/SomeChannel/ --prompt-file find_outliers.txt   # reads summaries.md → writes analysis.md
-python prune.py output/SomeChannel/                                      # reads analysis.md + summaries.md → writes summaries_v2.md
-python analyze.py output/SomeChannel/ --prompt-file find_outliers.txt   # reads summaries_v2.md → overwrites analysis.md
-python prune.py output/SomeChannel/                                      # reads analysis.md + summaries_v2.md → writes summaries_v3.md
-# repeat until "No outlier URLs found"
+Inject discovered categories into the categorization template.
+
+```
+python build_prompt.py <dir>/analysis.md [--template categorize_template.txt] [-o categorize_run.txt]
 ```
 
-## Cross-Channel Merge
+Reads categories from `analysis.md` (output of `discover_categories.txt` run), substitutes the `{categories}` placeholder in the template, and writes the ready-to-use prompt file.
 
-After running the full pipeline on multiple channels, merge their per-channel categories into a unified taxonomy:
+### merge.py
 
-```bash
-# Merge categories across all channels (calls Claude once for taxonomy)
-python merge.py output/
+Merge per-channel category files into a unified cross-channel taxonomy.
 
-# Uses existing taxonomy without re-calling the LLM
-python merge.py output/ --taxonomy-file output/_merged/taxonomy.json
-
-# Dry run — show prompt and taxonomy without writing files
-python merge.py output/ --dry-run
-
-# Control category count bounds (default: 5-10)
-python merge.py output/ --min-categories 5 --max-categories 10
 ```
+python merge.py output/ [-o output/_merged] [--min-categories 5] [--max-categories 10]
+```
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--taxonomy-file` | — | Reuse existing taxonomy JSON instead of calling the LLM |
+| `--min-categories` | 5 | Minimum unified categories |
+| `--max-categories` | 10 | Maximum unified categories |
+| `--dry-run` | off | Show prompt and taxonomy without writing files |
 
 - Reads `output/<channel>/categories/*.md` across all channels
 - LLM proposes a unified taxonomy and maps each channel's categories to it
 - Saves `taxonomy.json` for reproducibility
-- Creates `output/_merged/<category>.md` files with content from all mapped source categories
 - Adding a new channel: run its pipeline independently, then re-run `merge.py`
 
-## Consolidate
+### consolidate.py
 
-Reduce redundancy across merged category files. Many videos from different creators cover the same advice — consolidation deduplicates while preserving unique insights.
+Deduplicate content across merged category files. Many videos from different creators cover the same advice — consolidation removes redundancy while preserving unique insights.
 
-```bash
-# Consolidate a single category
-python consolidate.py output/_merged/salary_negotiation_and_compensation.md
-
-# Consolidate all categories
-python consolidate.py output/_merged/ -o output/_consolidated/
-
-# Skip already-consolidated files on re-run
-python consolidate.py output/_merged/ -o output/_consolidated/ --skip-existing
-
-# Dry run — show chunking plan without API calls
-python consolidate.py output/_merged/ --dry-run
-
-# Adjust chunk size (default: 15000 tokens)
-python consolidate.py output/_merged/ --chunk-tokens 12000
+```
+python consolidate.py <file_or_dir> [-o output/_consolidated/] [--chunk-tokens 20000]
 ```
 
-- Small categories (< ~30k tokens): single-pass consolidation
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--chunk-tokens` | 20000 | Tokens per chunk for large files |
+| `--skip-existing` | off | Skip already-consolidated files on re-run |
+| `--dry-run` | off | Show chunking plan without API calls |
+
+- Small categories (under ~30k tokens): single-pass consolidation
 - Large categories: chunked consolidation + final merge pass
-- Output includes stats header (original vs consolidated token count)
+- Output includes a stats header (original vs consolidated token count)
+
+## Prompt files
+
+Analysis behavior is controlled by `.txt` prompt files passed to `analyze.py` via `--prompt-file`, and to `summarize.py`:
+
+| File | Used with | Purpose |
+|------|-----------|---------|
+| `summary_prompt.txt` | `summarize.py` | Per-video summarization instructions |
+| `find_outliers.txt` | `analyze.py` | Identify off-topic / promotional / non-teaching videos |
+| `discover_categories.txt` | `analyze.py --titles-only` | Discover natural themes from video titles |
+| `categorize_template.txt` | `build_prompt.py` | Template with `{categories}` placeholder for categorization |
+| `categorize_run.txt` | `analyze.py` | Generated by `build_prompt.py` — ready-to-use categorization prompt |
+
+Edit the number in `discover_categories.txt` ("Identify 5 natural themes...") to control category granularity.
+
+## Proxy support
+
+YouTube may block transcript requests from cloud provider IPs (or after heavy use). Route requests through [Webshare](https://www.webshare.io/) rotating residential proxies:
+
+```bash
+# Via CLI flags
+python channeltool.py transcribe -o ./output/SomeChannel --webshare-user USER --webshare-pass PASS
+
+# Via environment variables
+export WEBSHARE_PROXY_USER=USER
+export WEBSHARE_PROXY_PASS=PASS
+python channeltool.py run https://www.youtube.com/@SomeChannel --after 2025-01-01 -o ./output
+```
+
+The standalone `yttranscribe.py` also supports the same flags. When no credentials are provided, requests go direct.
 
 ## Output structure
-
-`fetch` and `run` automatically organize output by channel name:
 
 ```
 output/
@@ -254,30 +254,27 @@ output/
     summaries_v2.md                     # after first prune pass
     summaries_v3.md                     # after second prune pass, etc.
     analysis.md                         # latest analysis output (always overwritten)
-    categories/                         # per-category split files (from split.py)
+    categories/                         # per-category split files
       interview_prep.md
       resume_and_applications.md
-      ...
-  AnotherChannel/                       # another channel's data
+  AnotherChannel/
     ...
   _merged/                              # cross-channel unified categories
     taxonomy.json                       # mapping from per-channel → unified names
     interview_preparation_and_techniques.md
     salary_negotiation_and_compensation.md
-    ...
   _consolidated/                        # deduplicated reference docs
     interview_preparation_and_techniques.md
     salary_negotiation_and_compensation.md
-    ...
 ```
 
-Re-running transcription/summarization skips already-completed items (resumable).
+All scripts are resumable — re-running transcription, summarization, or consolidation skips already-completed items.
 
 ## Standalone scripts
 
 | Script | Purpose |
 |--------|---------|
-| `getaudio.py` | Download audio from a single YouTube video |
-| `yttranscribe.py` | Download YouTube captions for a single video (supports `--chat` for interactive Q&A via OpenAI) |
-| `transcribe.py` | Transcribe audio with AssemblyAI + enhance with Claude |
+| `getaudio.py` | Download audio from a single YouTube video (`input.mp3`) |
+| `yttranscribe.py` | Download YouTube captions for a single video (supports `--chat` for interactive Q&A) |
+| `transcribe.py` | Transcribe an audio file with AssemblyAI + enhance with Claude |
 | `recorder.py` | Screen + audio recorder for Linux using ffmpeg (unrelated utility) |

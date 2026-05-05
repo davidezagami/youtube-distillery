@@ -28,9 +28,12 @@ brew install ffmpeg               # macOS
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `ANTHROPIC_API_KEY` | Yes (for summarize/analyze/consolidate) | Claude API access |
+| `ANTHROPIC_API_KEY` | Yes for Anthropic-backed summarize/analyze/consolidate | Claude API access |
 | `ASSEMBLYAI_API_KEY` | Only if YouTube captions unavailable | AssemblyAI transcription fallback |
-| `ANTHROPIC_MODEL` | No | Override default model (default: `claude-sonnet-4-5-20250929`) |
+| `ANTHROPIC_MODEL` | No | Override default model (default: `claude-opus-4-6`) |
+| `CODEX_SUMMARY_MODEL` | No | Override Codex summarization model (default: `gpt-5.3-codex`) |
+| `CODEX_REASONING_EFFORT` | No | Override Codex summarization reasoning effort (default: `low`) |
+| `CODEX_VERBOSITY` | No | Override Codex summarization verbosity (default: `low`) |
 | `WEBSHARE_PROXY_USER` | No | Webshare rotating proxy username |
 | `WEBSHARE_PROXY_PASS` | No | Webshare rotating proxy password |
 

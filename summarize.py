@@ -201,8 +201,6 @@ class CodexExecSummarizer:
             "--skip-git-repo-check",
             "--sandbox",
             "read-only",
-            "--ask-for-approval",
-            "never",
             "--color",
             "never",
             "-m",
@@ -338,6 +336,8 @@ def main() -> int:
                         help="Max parallel model calls (default: 5 for Anthropic, 1 for codex-exec)")
     parser.add_argument("--limit", type=int, default=None,
                         help="Max number of videos to summarize in this run")
+    parser.add_argument("--video-id", action="append", default=None,
+                        help="Only summarize a specific YouTube video ID. Repeat for multiple videos.")
     args = parser.parse_args()
     if args.concurrency is None:
         args.concurrency = 1 if args.provider == "codex-exec" else 5
@@ -377,6 +377,17 @@ def main() -> int:
         v for v in index.get("videos", [])
         if v.get("status") == "transcribed" and v.get("transcript_file")
     ]
+
+    if args.video_id:
+        requested_ids = set(args.video_id)
+        videos = [v for v in videos if v["id"] in requested_ids]
+        found_ids = {v["id"] for v in videos}
+        missing_ids = sorted(requested_ids - found_ids)
+        if missing_ids:
+            print(
+                "Warning: requested video IDs are not transcribed or are missing transcripts: "
+                + ", ".join(missing_ids)
+            )
 
     if not videos:
         print("No transcribed videos found in the index.")

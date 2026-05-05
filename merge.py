@@ -18,7 +18,7 @@ from pathlib import Path
 
 import anthropic
 
-DEFAULT_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+DEFAULT_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6")
 
 
 def filename_to_label(filename: str) -> str:

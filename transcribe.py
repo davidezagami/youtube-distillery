@@ -202,7 +202,7 @@ def main():
     try:
         assemblyai_key = args.assemblyai_key or os.getenv("ASSEMBLYAI_API_KEY")
         anthropic_key = args.anthropic_key or os.getenv("ANTHROPIC_API_KEY")
-        model = args.model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+        model = args.model or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6")
         
         if not assemblyai_key or not anthropic_key:
             raise ValueError(

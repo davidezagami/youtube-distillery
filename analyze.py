@@ -149,7 +149,7 @@ def main() -> int:
         print("Error: provide an Anthropic API key via --anthropic-key or ANTHROPIC_API_KEY env var")
         return 1
 
-    model = args.model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+    model = args.model or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6")
     prompt = prompt_path.read_text(encoding="utf-8").strip()
     output_path = Path(args.output) if args.output else input_dir / "analysis.md"
     output_path.parent.mkdir(parents=True, exist_ok=True)

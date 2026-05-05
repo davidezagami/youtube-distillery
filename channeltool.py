@@ -310,7 +310,7 @@ def process_videos(
     enhance: bool = False,
     assemblyai_key: str | None = None,
     anthropic_key: str | None = None,
-    anthropic_model: str = "claude-sonnet-4-5-20250929",
+    anthropic_model: str = "claude-opus-4-6",
     lang: str = "en",
     timestamps: bool = True,
     proxy_config=None,
@@ -432,7 +432,7 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
 
     assemblyai_key = args.assemblyai_key or os.getenv("ASSEMBLYAI_API_KEY")
     anthropic_key = args.anthropic_key or os.getenv("ANTHROPIC_API_KEY")
-    anthropic_model = args.model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+    anthropic_model = args.model or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6")
 
     ws_user = args.webshare_user or os.getenv("WEBSHARE_PROXY_USER")
     ws_pass = args.webshare_pass or os.getenv("WEBSHARE_PROXY_PASS")

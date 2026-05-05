@@ -108,17 +108,23 @@ python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output [--enhanc
 
 ### summarize.py
 
-Generate a Claude-powered summary for each transcribed video, appended to a single markdown file.
+Generate a summary for each transcribed video, appended to a single markdown file.
 
 ```
 python summarize.py <dir>/ [--prompt-file summary_prompt.txt] [-o summaries.md] [--concurrency 5] [--limit N]
+python summarize.py <dir>/ --provider codex-exec --prompt-file summary_prompt.txt
 ```
 
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `--prompt-file` | built-in prompt | Custom summarization prompt |
-| `--concurrency` | 5 | Max parallel API calls |
+| `--provider` | `anthropic` | Model provider: `anthropic` or local non-interactive `codex-exec` |
+| `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` for Anthropic, `CODEX_SUMMARY_MODEL` for `codex-exec`) |
+| `--codex-reasoning-effort` | `low` | Codex reasoning effort for `codex-exec` |
+| `--codex-verbosity` | `low` | Codex response verbosity for `codex-exec` |
+| `--concurrency` | provider-specific | Max parallel model calls (default: 5 for Anthropic, 1 for `codex-exec`) |
 | `--limit` | unlimited | Max videos to summarize in this run |
+| `--video-id` | all transcribed videos | Limit a run to one specific YouTube video ID; repeat for multiple IDs |
 
 Resumable: already-summarized video IDs are detected and skipped on re-run.
 

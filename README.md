@@ -125,8 +125,10 @@ python summarize.py <dir>/ --provider codex-exec --prompt-file summary_prompt.tx
 | `--prompt-file` | built-in prompt | Custom summarization prompt |
 | `--provider` | `anthropic` | Model provider: `anthropic` or local non-interactive `codex-exec` |
 | `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` for Anthropic, `CODEX_MODEL` for `codex-exec`) |
+| `--codex-command` | `codex` | Codex executable path/name for `codex-exec` |
 | `--codex-reasoning-effort` | `low` | Codex reasoning effort for `codex-exec` |
 | `--codex-verbosity` | `low` | Codex response verbosity for `codex-exec` |
+| `--codex-timeout` | `900` | Seconds to wait for each Codex call |
 | `--concurrency` | provider-specific | Max parallel model calls (default: 5 for Anthropic, 1 for `codex-exec`) |
 | `--limit` | unlimited | Max videos to summarize in this run |
 | `--video-id` | all transcribed videos | Limit a run to one specific YouTube video ID; repeat for multiple IDs |
@@ -147,8 +149,10 @@ python analyze.py <dir>/ --provider codex-exec --prompt-file <prompt.txt>
 | `--prompt-file` | (required) | Analysis prompt file |
 | `--provider` | `anthropic` | Model provider: `anthropic` or local non-interactive `codex-exec` |
 | `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` for Anthropic, `CODEX_MODEL` for `codex-exec`) |
+| `--codex-command` | `codex` | Codex executable path/name for `codex-exec` |
 | `--codex-reasoning-effort` | `low` | Codex reasoning effort for `codex-exec` |
 | `--codex-verbosity` | `low` | Codex response verbosity for `codex-exec` |
+| `--codex-timeout` | `900` | Seconds to wait for each Codex call |
 | `--batch-size` | 20 | Max summaries per API request |
 | `--concurrency` | provider-specific | Max parallel model calls (default: 5 for Anthropic, 1 for `codex-exec`) |
 | `--titles-only` | off | Send only video titles in a single call (for lightweight tasks) |
@@ -202,8 +206,10 @@ python merge.py output/ --provider codex-exec
 |------|---------|---------|
 | `--provider` | `anthropic` | Model provider for taxonomy generation |
 | `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` or `CODEX_MODEL`) |
+| `--codex-command` | `codex` | Codex executable path/name for `codex-exec` |
 | `--codex-reasoning-effort` | `low` | Codex reasoning effort for `codex-exec` |
 | `--codex-verbosity` | `low` | Codex response verbosity for `codex-exec` |
+| `--codex-timeout` | `900` | Seconds to wait for each Codex call |
 | `--taxonomy-file` | — | Reuse existing taxonomy JSON instead of calling the LLM |
 | `--min-categories` | 5 | Minimum unified categories |
 | `--max-categories` | 10 | Maximum unified categories |
@@ -227,8 +233,10 @@ python consolidate.py <file_or_dir> --provider codex-exec [-o output/_consolidat
 |------|---------|---------|
 | `--provider` | `anthropic` | Model provider: `anthropic` or local non-interactive `codex-exec` |
 | `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` or `CODEX_MODEL`) |
+| `--codex-command` | `codex` | Codex executable path/name for `codex-exec` |
 | `--codex-reasoning-effort` | `low` | Codex reasoning effort for `codex-exec` |
 | `--codex-verbosity` | `low` | Codex response verbosity for `codex-exec` |
+| `--codex-timeout` | `900` | Seconds to wait for each Codex call |
 | `--chunk-tokens` | 20000 | Tokens per chunk for large files |
 | `--skip-existing` | off | Skip already-consolidated files on re-run |
 | `--dry-run` | off | Show chunking plan without API calls |

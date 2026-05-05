@@ -19,12 +19,12 @@ import json
 import math
 import os
 import re
-import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 import anthropic
+
+from llm_providers import CodexExecRunner, add_codex_arguments, resolve_codex_model
 
 DEFAULT_PROMPT = (
     "Summarize the following video transcript concisely. "
@@ -171,11 +171,7 @@ class AnthropicSummarizer:
 
 @dataclass
 class CodexExecSummarizer:
-    command: str
-    model: str
-    reasoning_effort: str
-    verbosity: str
-    timeout: int
+    runner: CodexExecRunner
 
     async def summarize(
         self,
@@ -186,83 +182,8 @@ class CodexExecSummarizer:
     ) -> str:
         """Send a single transcript to codex exec and return the final message."""
         stdin_text = build_codex_summary_input(prompt, title, body)
-        output_file = tempfile.NamedTemporaryFile(
-            prefix="summarize-codex-", suffix=".md", delete=False
-        )
-        output_path = Path(output_file.name)
-        output_file.close()
-
-        cmd = [
-            self.command,
-            "exec",
-            "--ignore-user-config",
-            "--ignore-rules",
-            "--ephemeral",
-            "--skip-git-repo-check",
-            "--sandbox",
-            "read-only",
-            "--color",
-            "never",
-            "-m",
-            self.model,
-            "-c",
-            f'model_reasoning_effort="{self.reasoning_effort}"',
-            "-c",
-            'model_reasoning_summary="none"',
-            "-c",
-            f'model_verbosity="{self.verbosity}"',
-            "-c",
-            'web_search="disabled"',
-            "-c",
-            "features.shell_tool=false",
-            "-c",
-            "hide_agent_reasoning=true",
-            "--output-last-message",
-            str(output_path),
-            "-",
-        ]
-
-        try:
-            async with semaphore:
-                process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                try:
-                    stdout, stderr = await asyncio.wait_for(
-                        process.communicate(stdin_text.encode("utf-8")),
-                        timeout=self.timeout,
-                    )
-                except asyncio.TimeoutError as exc:
-                    process.kill()
-                    await process.communicate()
-                    raise RuntimeError(
-                        f"codex exec timed out after {self.timeout}s for: {title}"
-                    ) from exc
-
-            if process.returncode != 0:
-                details = "\n".join(
-                    part
-                    for part in (
-                        stderr.decode("utf-8", errors="replace").strip(),
-                        stdout.decode("utf-8", errors="replace").strip(),
-                    )
-                    if part
-                )
-                if len(details) > 4000:
-                    details = details[-4000:]
-                raise RuntimeError(
-                    f"codex exec failed with exit code {process.returncode} for: {title}\n{details}"
-                )
-
-            summary = output_path.read_text(encoding="utf-8").strip()
-            if not summary:
-                raise RuntimeError(f"codex exec produced an empty summary for: {title}")
-            return summary
-        finally:
-            output_path.unlink(missing_ok=True)
+        async with semaphore:
+            return await self.runner.arun(stdin_text, label=title)
 
 
 async def summarize_all(
@@ -319,19 +240,8 @@ def main() -> int:
     parser.add_argument("--anthropic-key",
                         help="Anthropic API key (or ANTHROPIC_API_KEY env)")
     parser.add_argument("--model", default=None,
-                        help="Model name. Defaults to ANTHROPIC_MODEL for Anthropic or CODEX_SUMMARY_MODEL for codex-exec")
-    parser.add_argument("--codex-command", default=os.getenv("CODEX_COMMAND", "codex"),
-                        help="codex executable to run for --provider codex-exec (default: codex)")
-    parser.add_argument("--codex-reasoning-effort",
-                        choices=["minimal", "low", "medium", "high", "xhigh"],
-                        default=os.getenv("CODEX_REASONING_EFFORT", "low"),
-                        help="codex exec model_reasoning_effort override (default: low)")
-    parser.add_argument("--codex-verbosity", choices=["low", "medium", "high"],
-                        default=os.getenv("CODEX_VERBOSITY", "low"),
-                        help="codex exec model_verbosity override (default: low)")
-    parser.add_argument("--codex-timeout", type=int,
-                        default=int(os.getenv("CODEX_TIMEOUT", "900")),
-                        help="Seconds to wait for each codex exec call (default: 900)")
+                        help="Model name. Defaults to ANTHROPIC_MODEL for Anthropic or CODEX_MODEL for codex-exec")
+    add_codex_arguments(parser)
     parser.add_argument("--concurrency", type=int, default=None,
                         help="Max parallel model calls (default: 5 for Anthropic, 1 for codex-exec)")
     parser.add_argument("--limit", type=int, default=None,
@@ -356,17 +266,20 @@ def main() -> int:
         model = args.model or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6")
         summarizer = AnthropicSummarizer(anthropic.AsyncAnthropic(api_key=api_key), model)
     else:
-        if shutil.which(args.codex_command) is None:
-            print(f"Error: codex command not found: {args.codex_command}")
+        model = resolve_codex_model(args.model, legacy_env="CODEX_SUMMARY_MODEL")
+        try:
+            runner = CodexExecRunner(
+                command=args.codex_command,
+                model=model,
+                reasoning_effort=args.codex_reasoning_effort,
+                verbosity=args.codex_verbosity,
+                timeout=args.codex_timeout,
+                output_prefix="summarize-codex-",
+            )
+        except FileNotFoundError as exc:
+            print(f"Error: {exc}")
             return 1
-        model = args.model or os.getenv("CODEX_SUMMARY_MODEL", "gpt-5.3-codex")
-        summarizer = CodexExecSummarizer(
-            command=args.codex_command,
-            model=model,
-            reasoning_effort=args.codex_reasoning_effort,
-            verbosity=args.codex_verbosity,
-            timeout=args.codex_timeout,
-        )
+        summarizer = CodexExecSummarizer(runner)
 
     prompt = load_prompt(args.prompt_file)
     output_path = Path(args.output) if args.output else input_dir / "summaries.md"

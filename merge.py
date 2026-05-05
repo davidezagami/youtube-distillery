@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Cross-channel category merge.
 
-Reads per-channel category files, asks Claude to propose a unified taxonomy,
-then concatenates content into merged category files.
+Reads per-channel category files, asks the selected provider to propose a
+unified taxonomy, then concatenates content into merged category files.
 
 Usage:
     python merge.py output/ -o output/_merged/
@@ -18,7 +18,15 @@ from pathlib import Path
 
 import anthropic
 
-DEFAULT_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6")
+from llm_providers import CodexExecRunner, add_codex_arguments, resolve_codex_model
+
+DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-6"
+
+CODEX_MERGE_SYSTEM_PROMPT = (
+    "You are running a taxonomy merge step in a YouTube summary processing pipeline. "
+    "Return only valid JSON matching the requested schema. Do not include markdown "
+    "fences, preambles, or explanations."
+)
 
 
 def filename_to_label(filename: str) -> str:
@@ -91,7 +99,19 @@ def build_merge_prompt(channels: dict[str, list[dict]], min_cats: int, max_cats:
     return "\n".join(lines)
 
 
-def call_llm(prompt: str, api_key: str | None, model: str) -> dict:
+def build_codex_merge_input(prompt: str) -> str:
+    return f"{CODEX_MERGE_SYSTEM_PROMPT}\n\nMerge prompt:\n{prompt}\n"
+
+
+def parse_taxonomy_json(text: str) -> dict:
+    # Strip markdown fences if present
+    if text.startswith("```"):
+        text = re.sub(r"^```\w*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+    return json.loads(text)
+
+
+def call_anthropic(prompt: str, api_key: str | None, model: str) -> dict:
     """Send the merge prompt to Claude and parse JSON response."""
     client = anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
@@ -99,12 +119,12 @@ def call_llm(prompt: str, api_key: str | None, model: str) -> dict:
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
-    text = response.content[0].text.strip()
-    # Strip markdown fences if present
-    if text.startswith("```"):
-        text = re.sub(r"^```\w*\n?", "", text)
-        text = re.sub(r"\n?```$", "", text)
-    return json.loads(text)
+    return parse_taxonomy_json(response.content[0].text.strip())
+
+
+def call_codex(prompt: str, runner: CodexExecRunner) -> dict:
+    """Send the merge prompt to codex exec and parse JSON response."""
+    return parse_taxonomy_json(runner.run(build_codex_merge_input(prompt), label="unified taxonomy"))
 
 
 def do_merge(
@@ -162,6 +182,9 @@ def main():
     parser.add_argument("-o", "--output", default=None, help="Merged output directory (default: <output_dir>/_merged)")
     parser.add_argument("--anthropic-key", default=None, help="Anthropic API key")
     parser.add_argument("--model", default=None, help="Model to use")
+    parser.add_argument("--provider", choices=["anthropic", "codex-exec"], default="anthropic",
+                        help="Model provider to use (default: anthropic)")
+    add_codex_arguments(parser)
     parser.add_argument("--min-categories", type=int, default=5, help="Minimum unified categories (default: 5)")
     parser.add_argument("--max-categories", type=int, default=10, help="Maximum unified categories (default: 10)")
     parser.add_argument("--dry-run", action="store_true", help="Show prompt and taxonomy without writing files")
@@ -170,7 +193,30 @@ def main():
 
     output_dir = Path(args.output_dir)
     merged_dir = Path(args.output) if args.output else output_dir / "_merged"
-    model = args.model or DEFAULT_MODEL
+    if args.provider == "anthropic":
+        api_key = args.anthropic_key or os.getenv("ANTHROPIC_API_KEY")
+        if not api_key and not args.taxonomy_file:
+            print("Error: provide an Anthropic API key via --anthropic-key or ANTHROPIC_API_KEY env var")
+            return 1
+        model = args.model or os.getenv("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
+        codex_runner = None
+    else:
+        model = resolve_codex_model(args.model)
+        codex_runner = None
+        if not args.taxonomy_file:
+            try:
+                codex_runner = CodexExecRunner(
+                    command=args.codex_command,
+                    model=model,
+                    reasoning_effort=args.codex_reasoning_effort,
+                    verbosity=args.codex_verbosity,
+                    timeout=args.codex_timeout,
+                    output_prefix="merge-codex-",
+                )
+            except FileNotFoundError as exc:
+                print(f"Error: {exc}")
+                return 1
+        api_key = None
 
     channels = collect_categories(output_dir)
     if not channels:
@@ -194,15 +240,19 @@ def main():
             print(prompt)
             print()
 
-        print("Calling LLM for unified taxonomy...")
-        taxonomy = call_llm(prompt, args.anthropic_key, model)
+        print(f"Calling LLM for unified taxonomy with {model} via {args.provider}...")
+        if args.provider == "codex-exec":
+            assert codex_runner is not None
+            taxonomy = call_codex(prompt, codex_runner)
+        else:
+            taxonomy = call_anthropic(prompt, api_key, model)
 
         # Save taxonomy for reproducibility
-        tax_path = merged_dir if not args.dry_run else output_dir
-        tax_path.mkdir(parents=True, exist_ok=True)
-        tax_file = tax_path / "taxonomy.json"
-        tax_file.write_text(json.dumps(taxonomy, indent=2))
-        print(f"Taxonomy saved to {tax_file}")
+        if not args.dry_run:
+            merged_dir.mkdir(parents=True, exist_ok=True)
+            tax_file = merged_dir / "taxonomy.json"
+            tax_file.write_text(json.dumps(taxonomy, indent=2))
+            print(f"Taxonomy saved to {tax_file}")
 
     if args.dry_run:
         print("\n=== TAXONOMY ===")

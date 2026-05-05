@@ -1,6 +1,6 @@
 # YouTube Channel Transcription & Analysis Pipeline
 
-Fetch, transcribe, summarize, and curate videos from YouTube channels. YouTube captions preferred, AssemblyAI as fallback. Summaries are generated with Claude, then iteratively analyzed and pruned to remove off-topic content. Multiple channels can be merged into a unified taxonomy and consolidated into deduplicated reference documents.
+Fetch, transcribe, summarize, and curate videos from YouTube channels. YouTube captions preferred, AssemblyAI as fallback. Summaries and downstream LLM stages use Claude by default, with optional local non-interactive `codex exec` support. Multiple channels can be merged into a unified taxonomy and consolidated into deduplicated reference documents.
 
 ## Setup
 
@@ -28,12 +28,14 @@ brew install ffmpeg               # macOS
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `ANTHROPIC_API_KEY` | Yes for Anthropic-backed summarize/analyze/consolidate | Claude API access |
+| `ANTHROPIC_API_KEY` | Yes for Anthropic-backed summarize/analyze/merge/consolidate | Claude API access |
 | `ASSEMBLYAI_API_KEY` | Only if YouTube captions unavailable | AssemblyAI transcription fallback |
 | `ANTHROPIC_MODEL` | No | Override default model (default: `claude-opus-4-6`) |
-| `CODEX_SUMMARY_MODEL` | No | Override Codex summarization model (default: `gpt-5.3-codex`) |
-| `CODEX_REASONING_EFFORT` | No | Override Codex summarization reasoning effort (default: `low`) |
-| `CODEX_VERBOSITY` | No | Override Codex summarization verbosity (default: `low`) |
+| `CODEX_MODEL` | No | Override Codex model for `codex-exec` stages (default: `gpt-5.3-codex`) |
+| `CODEX_COMMAND` | No | Override Codex executable path/name (default: `codex`) |
+| `CODEX_REASONING_EFFORT` | No | Override Codex reasoning effort (default: `low`) |
+| `CODEX_VERBOSITY` | No | Override Codex response verbosity (default: `low`) |
+| `CODEX_TIMEOUT` | No | Seconds to wait for each Codex call (default: `900`) |
 | `WEBSHARE_PROXY_USER` | No | Webshare rotating proxy username |
 | `WEBSHARE_PROXY_PASS` | No | Webshare rotating proxy password |
 
@@ -122,7 +124,7 @@ python summarize.py <dir>/ --provider codex-exec --prompt-file summary_prompt.tx
 |------|---------|---------|
 | `--prompt-file` | built-in prompt | Custom summarization prompt |
 | `--provider` | `anthropic` | Model provider: `anthropic` or local non-interactive `codex-exec` |
-| `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` for Anthropic, `CODEX_SUMMARY_MODEL` for `codex-exec`) |
+| `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` for Anthropic, `CODEX_MODEL` for `codex-exec`) |
 | `--codex-reasoning-effort` | `low` | Codex reasoning effort for `codex-exec` |
 | `--codex-verbosity` | `low` | Codex response verbosity for `codex-exec` |
 | `--concurrency` | provider-specific | Max parallel model calls (default: 5 for Anthropic, 1 for `codex-exec`) |
@@ -133,17 +135,22 @@ Resumable: already-summarized video IDs are detected and skipped on re-run.
 
 ### analyze.py
 
-Run a chunked analysis over summaries using a prompt file. Summaries are split into batches, each sent to Claude, and responses are concatenated.
+Run a chunked analysis over summaries using a prompt file. Summaries are split into batches, each sent to the selected provider, and responses are concatenated.
 
 ```
 python analyze.py <dir>/ --prompt-file <prompt.txt> [--batch-size 20] [-o analysis.md] [--concurrency 5]
+python analyze.py <dir>/ --provider codex-exec --prompt-file <prompt.txt>
 ```
 
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `--prompt-file` | (required) | Analysis prompt file |
+| `--provider` | `anthropic` | Model provider: `anthropic` or local non-interactive `codex-exec` |
+| `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` for Anthropic, `CODEX_MODEL` for `codex-exec`) |
+| `--codex-reasoning-effort` | `low` | Codex reasoning effort for `codex-exec` |
+| `--codex-verbosity` | `low` | Codex response verbosity for `codex-exec` |
 | `--batch-size` | 20 | Max summaries per API request |
-| `--concurrency` | 5 | Max parallel API calls |
+| `--concurrency` | provider-specific | Max parallel model calls (default: 5 for Anthropic, 1 for `codex-exec`) |
 | `--titles-only` | off | Send only video titles in a single call (for lightweight tasks) |
 
 Auto-detects the latest `summaries_vN.md` in the directory (falls back to `summaries.md`). Output defaults to `<dir>/analysis.md` (always overwritten).
@@ -188,10 +195,15 @@ Merge per-channel category files into a unified cross-channel taxonomy.
 
 ```
 python merge.py output/ [-o output/_merged] [--min-categories 5] [--max-categories 10]
+python merge.py output/ --provider codex-exec
 ```
 
 | Flag | Default | Purpose |
 |------|---------|---------|
+| `--provider` | `anthropic` | Model provider for taxonomy generation |
+| `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` or `CODEX_MODEL`) |
+| `--codex-reasoning-effort` | `low` | Codex reasoning effort for `codex-exec` |
+| `--codex-verbosity` | `low` | Codex response verbosity for `codex-exec` |
 | `--taxonomy-file` | — | Reuse existing taxonomy JSON instead of calling the LLM |
 | `--min-categories` | 5 | Minimum unified categories |
 | `--max-categories` | 10 | Maximum unified categories |
@@ -208,10 +220,15 @@ Deduplicate content across merged category files. Many videos from different cre
 
 ```
 python consolidate.py <file_or_dir> [-o output/_consolidated/] [--chunk-tokens 20000]
+python consolidate.py <file_or_dir> --provider codex-exec [-o output/_consolidated/]
 ```
 
 | Flag | Default | Purpose |
 |------|---------|---------|
+| `--provider` | `anthropic` | Model provider: `anthropic` or local non-interactive `codex-exec` |
+| `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` or `CODEX_MODEL`) |
+| `--codex-reasoning-effort` | `low` | Codex reasoning effort for `codex-exec` |
+| `--codex-verbosity` | `low` | Codex response verbosity for `codex-exec` |
 | `--chunk-tokens` | 20000 | Tokens per chunk for large files |
 | `--skip-existing` | off | Skip already-consolidated files on re-run |
 | `--dry-run` | off | Show chunking plan without API calls |

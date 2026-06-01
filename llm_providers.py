@@ -12,8 +12,8 @@ import tempfile
 from pathlib import Path
 
 
-DEFAULT_CODEX_MODEL = "gpt-5.3-codex"
-CODEX_REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
+DEFAULT_CODEX_MODEL = "gpt-5.4"
+CODEX_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
 CODEX_VERBOSITIES = ("low", "medium", "high")
 
 
@@ -37,8 +37,8 @@ def add_codex_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--codex-reasoning-effort",
         choices=CODEX_REASONING_EFFORTS,
-        default=os.getenv("CODEX_REASONING_EFFORT", "low"),
-        help="codex exec model_reasoning_effort override (default: low)",
+        default=os.getenv("CODEX_REASONING_EFFORT", "none"),
+        help="codex exec model_reasoning_effort override (default: none)",
     )
     parser.add_argument(
         "--codex-verbosity",

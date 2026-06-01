@@ -42,12 +42,21 @@ def label_to_filename(label: str) -> str:
     return slug + ".md"
 
 
-def collect_categories(output_dir: Path, exclude: list[str] | None = None) -> dict[str, list[dict]]:
+def collect_categories(
+    output_dir: Path,
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
+) -> dict[str, list[dict]]:
     """Walk output/<channel>/categories/*.md and return {channel: [{label, path}, ...]}."""
+    include_set = set(include or [])
     exclude = set(exclude or [])
     channels = {}
     for entry in sorted(output_dir.iterdir()):
-        if not entry.is_dir() or entry.name.startswith("_") or entry.name in exclude:
+        if not entry.is_dir() or entry.name.startswith("_"):
+            continue
+        if include_set and entry.name not in include_set:
+            continue
+        if entry.name in exclude:
             continue
         cat_dir = entry / "categories"
         if not cat_dir.is_dir():
@@ -187,6 +196,10 @@ def main():
     add_codex_arguments(parser)
     parser.add_argument("--min-categories", type=int, default=5, help="Minimum unified categories (default: 5)")
     parser.add_argument("--max-categories", type=int, default=10, help="Maximum unified categories (default: 10)")
+    parser.add_argument("--include-channel", action="append", default=None,
+                        help="Only include this channel folder; repeat for multiple channels")
+    parser.add_argument("--exclude-channel", action="append", default=None,
+                        help="Exclude this channel folder; repeat for multiple channels")
     parser.add_argument("--dry-run", action="store_true", help="Show prompt and taxonomy without writing files")
     parser.add_argument("--taxonomy-file", default=None, help="Use existing taxonomy JSON instead of calling LLM")
     args = parser.parse_args()
@@ -218,7 +231,7 @@ def main():
                 return 1
         api_key = None
 
-    channels = collect_categories(output_dir)
+    channels = collect_categories(output_dir, include=args.include_channel, exclude=args.exclude_channel)
     if not channels:
         print("No channels with categories found.")
         return 1

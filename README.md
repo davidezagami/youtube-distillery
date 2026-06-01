@@ -44,8 +44,16 @@ All API keys can also be passed as CLI flags (`--anthropic-key`, `--assemblyai-k
 ## Quick start
 
 ```bash
-# 1. Fetch + transcribe a channel's videos since a date
+# 1. Standard path: fetch + transcribe a channel's videos since a date
 python channeltool.py run https://www.youtube.com/@SomeChannel --after 2025-01-01 -o ./output
+
+# Optional broad-channel path: fetch, triage titles, then transcribe kept videos
+python channeltool.py fetch https://www.youtube.com/@SomeChannel --after 2025-01-01 -o ./output
+python index_triage.py discover output/SomeChannel/
+python index_triage.py categorize output/SomeChannel/
+python index_triage.py apply output/SomeChannel/ --keep-category "Sales, Closing, and Persuasion"
+# Re-run the apply command with --apply after reviewing the dry-run counts, then:
+python channeltool.py transcribe -o output/SomeChannel/
 
 # 2. Summarize all transcripts
 python summarize.py output/SomeChannel/ --prompt-file summary_prompt.txt
@@ -67,10 +75,17 @@ python split.py output/SomeChannel/
 After processing multiple channels individually:
 
 ```bash
-# 5. Merge per-channel categories into a unified taxonomy
+# 5. Optional: build one shared taxonomy across a selected group of channels
+python group_categorize.py run output/ \
+  --group-name sales \
+  --channel SomeChannel \
+  --channel AnotherChannel \
+  --provider codex-exec
+
+# 6. Merge per-channel categories into a unified taxonomy
 python merge.py output/
 
-# 6. Consolidate (deduplicate) across creators
+# 7. Consolidate (deduplicate) across creators
 python consolidate.py output/_merged/ -o output/_consolidated/
 ```
 
@@ -110,6 +125,53 @@ Fetch + transcribe in one step. Accepts all options from both commands.
 ```
 python channeltool.py run <channel_url> --after YYYY-MM-DD -o ./output [--enhance] [--include-timestamps]
 ```
+
+### index_triage.py
+
+Metadata-only triage before transcription. This is useful for broad channels where many videos should not be transcribed or summarized.
+
+#### `discover`
+
+Discover categories from `index.json` metadata only. Defaults to pending videos and writes `<dir>/index_categories.md`.
+
+```
+python index_triage.py discover <dir>/ --provider codex-exec
+```
+
+#### `categorize`
+
+Categorize each indexed video into the discovered categories. Defaults to pending videos and writes `<dir>/index_categorizations.md`.
+
+```
+python index_triage.py categorize <dir>/ --provider codex-exec --batch-size 60
+```
+
+#### `apply`
+
+Dry-run a category filter, then mark excluded videos with `excluded_pretranscription` when `--apply` is passed. `channeltool.py transcribe` only processes `pending` videos, so excluded videos are skipped while remaining in `index.json` for audit.
+
+```
+# Dry run
+python index_triage.py apply <dir>/ --keep-category "Sales, Closing, and Persuasion"
+
+# Apply after reviewing counts
+python index_triage.py apply <dir>/ --keep-category "Sales, Closing, and Persuasion" --apply
+```
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--provider` | `codex-exec` | Model provider for `discover` and `categorize`: `anthropic` or local non-interactive `codex-exec` |
+| `--model` | provider env/default | Model override (`ANTHROPIC_MODEL` for Anthropic, `CODEX_MODEL` for `codex-exec`) |
+| `--status` | `pending` | Video status included by `discover`/`categorize`; repeat or use `all` |
+| `--batch-size` | 60 | Max videos per categorization call |
+| `--keep-category` | required for apply unless dropping | Keep only selected categories; repeat for multiple categories |
+| `--drop-category` | required for apply unless keeping | Exclude selected categories; repeat for multiple categories |
+| `--input-status` | `pending` | Statuses eligible for update during `apply`; repeat for multiple statuses |
+| `--uncategorized` | `keep` | Keep or exclude videos missing from the categorization file |
+| `--excluded-status` | `excluded_pretranscription` | Status assigned to filtered-out videos |
+| `--apply` | off | Actually update `index.json`; otherwise print a dry-run report |
+
+`apply --apply` writes a timestamped `index.before_index_triage_*.json` backup before changing statuses.
 
 ### summarize.py
 
@@ -193,6 +255,30 @@ python build_prompt.py <dir>/analysis.md [--template categorize_template.txt] [-
 
 Reads categories from `analysis.md` (output of `discover_categories.txt` run), substitutes the `{categories}` placeholder in the template, and writes the ready-to-use prompt file.
 
+### group_categorize.py
+
+Discover and apply one shared taxonomy across selected channels. This is useful when per-channel category discovery would create duplicated or weaker category names.
+
+```
+python group_categorize.py inspect output/ --group-name sales --channel ChannelA --channel ChannelB
+python group_categorize.py discover output/ --group-name sales --channel ChannelA --channel ChannelB --provider codex-exec
+python group_categorize.py categorize output/ --group-name sales --channel ChannelA --channel ChannelB --provider codex-exec
+python group_categorize.py split output/ --group-name sales --channel ChannelA --channel ChannelB
+python group_categorize.py run output/ --group-name sales --channel ChannelA --channel ChannelB --provider codex-exec
+```
+
+Outputs default to `<output_dir>/_<group-name>_group/`:
+
+| File | Purpose |
+|------|---------|
+| `categories.md` | Shared category list discovered from all selected titles |
+| `categorizations.md` | URL-keyed categorization output for all selected videos |
+| `analysis/<channel>.md` | Per-channel categorization audit in `split.py`-compatible format |
+| `taxonomy.json` | Identity taxonomy for `merge.py --taxonomy-file` |
+| `manifest.json` | Inputs, counts, and generated artifact paths |
+
+`split` writes normal `<channel>/categories/*.md` files for only the selected channels. Use `--overwrite-categories` when replacing existing category files.
+
 ### merge.py
 
 Merge per-channel category files into a unified cross-channel taxonomy.
@@ -200,6 +286,7 @@ Merge per-channel category files into a unified cross-channel taxonomy.
 ```
 python merge.py output/ [-o output/_merged] [--min-categories 5] [--max-categories 10]
 python merge.py output/ --provider codex-exec
+python merge.py output/ --include-channel SomeChannel --include-channel AnotherChannel -o output/_merged_subset
 ```
 
 | Flag | Default | Purpose |
@@ -213,6 +300,8 @@ python merge.py output/ --provider codex-exec
 | `--taxonomy-file` | — | Reuse existing taxonomy JSON instead of calling the LLM |
 | `--min-categories` | 5 | Minimum unified categories |
 | `--max-categories` | 10 | Maximum unified categories |
+| `--include-channel` | — | Only include this channel folder; repeat for multiple channels |
+| `--exclude-channel` | — | Exclude this channel folder; repeat for multiple channels |
 | `--dry-run` | off | Show prompt and taxonomy without writing files |
 
 - Reads `output/<channel>/categories/*.md` across all channels
@@ -227,6 +316,7 @@ Deduplicate content across merged category files. Many videos from different cre
 ```
 python consolidate.py <file_or_dir> [-o output/_consolidated/] [--chunk-tokens 20000]
 python consolidate.py <file_or_dir> --provider codex-exec [-o output/_consolidated/]
+python consolidate.py <file_or_dir> --final-merge concat --save-intermediates
 ```
 
 | Flag | Default | Purpose |
@@ -238,11 +328,14 @@ python consolidate.py <file_or_dir> --provider codex-exec [-o output/_consolidat
 | `--codex-verbosity` | `low` | Codex response verbosity for `codex-exec` |
 | `--codex-timeout` | `900` | Seconds to wait for each Codex call |
 | `--chunk-tokens` | 20000 | Tokens per chunk for large files |
+| `--final-merge` | `model` | Use `model` for an LLM final merge, or `concat` for deterministic concatenation of first-pass chunks |
+| `--save-intermediates` | off | Save raw chunk inputs, consolidated chunks, and final merge input under `<output>/_chunks/` |
+| `--intermediate-dir` | `<output>/_chunks` | Custom directory for `--save-intermediates` artifacts |
 | `--skip-existing` | off | Skip already-consolidated files on re-run |
 | `--dry-run` | off | Show chunking plan without API calls |
 
 - Small categories (under ~30k tokens): single-pass consolidation
-- Large categories: chunked consolidation + final merge pass
+- Large categories: chunked consolidation + final merge pass, unless `--final-merge concat` is used
 - Output includes a stats header (original vs consolidated token count)
 
 ## Prompt files
@@ -252,6 +345,8 @@ Analysis behavior is controlled by `.txt` prompt files passed to `analyze.py` vi
 | File | Used with | Purpose |
 |------|-----------|---------|
 | `summary_prompt.txt` | `summarize.py` | Per-video summarization instructions |
+| `discover_index_categories.txt` | `index_triage.py discover` | Discover practical pre-transcription categories from `index.json` metadata |
+| `categorize_index_template.txt` | `index_triage.py categorize` | Template with `{categories}` placeholder for index-level categorization |
 | `find_outliers.txt` | `analyze.py` | Identify off-topic / promotional / non-teaching videos |
 | `discover_categories.txt` | `analyze.py --titles-only` | Discover natural themes from video titles |
 | `categorize_template.txt` | `build_prompt.py` | Template with `{categories}` placeholder for categorization |
@@ -281,6 +376,9 @@ The standalone `yttranscribe.py` also supports the same flags. When no credentia
 output/
   SomeChannel/                          # auto-created from @SomeChannel URL
     index.json                          # manifest with video metadata + channel info
+    index_categories.md                 # optional pre-transcription category list
+    index_categorizations.md            # optional pre-transcription video categorization
+    index.before_index_triage_*.json     # backup before applying pre-transcription exclusions
     transcripts/
       2025-01-15_<video-id>.md          # markdown with YAML frontmatter
       2025-01-20_<video-id>.md
@@ -310,5 +408,7 @@ All scripts are resumable — re-running transcription, summarization, or consol
 |--------|---------|
 | `getaudio.py` | Download audio from a single YouTube video (`input.mp3`) |
 | `yttranscribe.py` | Download YouTube captions for a single video (supports `--chat` for interactive Q&A) |
+| `index_triage.py` | Discover categories, categorize videos, and filter `index.json` before transcription |
+| `group_categorize.py` | Discover one shared taxonomy across selected channels and split them into compatible category files |
 | `transcribe.py` | Transcribe an audio file with AssemblyAI + enhance with Claude |
 | `recorder.py` | Screen + audio recorder for Linux using ffmpeg (unrelated utility) |

@@ -146,6 +146,31 @@ def build_codex_consolidation_input(prompt: str, content: str) -> str:
     )
 
 
+def demote_markdown_headings(text: str, levels: int = 1) -> str:
+    """Demote headings so chunk documents can be nested under final sections."""
+
+    def repl(match: re.Match) -> str:
+        hashes = match.group(1)
+        return "#" * min(6, len(hashes) + levels) + match.group(2)
+
+    return re.sub(r"^(#{1,5})(\s+)", repl, text, flags=re.MULTILINE)
+
+
+def concatenate_chunk_results(chunk_results: list[str]) -> str:
+    """Deterministically concatenate first-pass chunk consolidations."""
+    sections = []
+    for i, result in enumerate(chunk_results, start=1):
+        body = demote_markdown_headings(result.strip())
+        sections.append(f"## Consolidated Chunk {i}\n\n{body}")
+    return "\n\n------------------------------------\n\n".join(sections)
+
+
+def write_artifact(path: Path, title: str, metadata: str, content: str) -> None:
+    """Persist an intermediate chunk input or result with a small audit header."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"# {title}\n\n{metadata.strip()}\n\n{content.strip()}\n", encoding="utf-8")
+
+
 def call_anthropic(prompt: str, content: str, api_key: str | None, model: str, max_tokens: int = DEFAULT_MAX_TOKENS, retries: int = 3) -> str:
     """Send a consolidation request to Claude using streaming, with retries."""
     client = anthropic.Anthropic(api_key=api_key)
@@ -203,6 +228,8 @@ def consolidate_file(
     chunk_tokens: int,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     dry_run: bool = False,
+    final_merge: str = "model",
+    intermediate_dir: Path | None = None,
 ) -> Path | None:
     """Consolidate a single merged category file."""
     text = filepath.read_text()
@@ -220,6 +247,7 @@ def consolidate_file(
         return None
 
     output_path = output_dir / filepath.name
+    category_artifact_dir = intermediate_dir / filepath.stem if intermediate_dir else None
 
     if total_tokens <= SINGLE_PASS_THRESHOLD:
         # Single pass
@@ -229,20 +257,36 @@ def consolidate_file(
             return None
 
         prompt = CONSOLIDATE_PROMPT.format(category=category_name)
+        if category_artifact_dir:
+            write_artifact(
+                category_artifact_dir / "single_pass_input.md",
+                f"{category_name} - Single Pass Input",
+                f"*Input: {len(summaries)} video summaries, ~{total_tokens:,} tokens*",
+                text,
+            )
         result = llm.call(prompt, text, category_name, max_tokens)
         result_tokens = estimate_tokens(result)
         print(f"  Result: ~{result_tokens:,} tokens ({result_tokens/total_tokens*100:.0f}% of original)")
+        if category_artifact_dir:
+            write_artifact(
+                category_artifact_dir / "single_pass_consolidated.md",
+                f"{category_name} - Single Pass Consolidated",
+                f"*Output: ~{result_tokens:,} tokens ({result_tokens/total_tokens*100:.0f}% of original)*",
+                result,
+            )
 
     else:
         # Chunked consolidation
         chunks = chunk_summaries(summaries, chunk_tokens)
-        print(f"  Strategy: chunked ({len(chunks)} chunks of ~{chunk_tokens:,} tokens)")
+        merge_description = "model final merge" if final_merge == "model" else "deterministic final concat"
+        print(f"  Strategy: chunked ({len(chunks)} chunks of ~{chunk_tokens:,} tokens, {merge_description})")
 
         if dry_run:
             for i, chunk in enumerate(chunks):
                 ct = sum(estimate_tokens(s) for s in chunk)
                 print(f"    Chunk {i+1}: {len(chunk)} summaries, ~{ct:,} tokens")
-            print(f"  [DRY RUN] Would consolidate in {len(chunks)} + 1 calls.")
+            final_calls = 1 if final_merge == "model" else 0
+            print(f"  [DRY RUN] Would consolidate in {len(chunks)} + {final_calls} calls.")
             return None
 
         # Phase 1: consolidate each chunk
@@ -253,9 +297,23 @@ def consolidate_file(
             print(f"  Chunk {i+1}/{len(chunks)}: {len(chunk)} summaries, ~{ct:,} tokens ...", end=" ", flush=True)
 
             prompt = CONSOLIDATE_PROMPT.format(category=category_name)
+            if category_artifact_dir:
+                write_artifact(
+                    category_artifact_dir / f"chunk_{i+1:02d}_input.md",
+                    f"{category_name} - Chunk {i+1} Input",
+                    f"*Input: {len(chunk)} video summaries, ~{ct:,} tokens*",
+                    chunk_text,
+                )
             result = llm.call(prompt, chunk_text, f"{category_name} chunk {i+1}", max_tokens)
             rt = estimate_tokens(result)
             print(f"→ ~{rt:,} tokens")
+            if category_artifact_dir:
+                write_artifact(
+                    category_artifact_dir / f"chunk_{i+1:02d}_consolidated.md",
+                    f"{category_name} - Chunk {i+1} Consolidated",
+                    f"*Output: ~{rt:,} tokens ({rt/ct*100:.0f}% of chunk input)*",
+                    result,
+                )
             chunk_results.append(result)
             time.sleep(1)  # rate limit courtesy
 
@@ -265,35 +323,51 @@ def consolidate_file(
             f"## Section {i+1}\n\n{r}" for i, r in enumerate(merge_sections)
         )
         merge_tokens = estimate_tokens(merged_input)
-        print(f"  Final merge: {len(merge_sections)} sections, ~{merge_tokens:,} tokens ...", end=" ", flush=True)
-
-        if merge_tokens > SINGLE_PASS_THRESHOLD * 2:
-            # Chunk results are still too big — do another round
-            print(f"\n  WARNING: Merge input is large (~{merge_tokens:,} tokens). Doing recursive merge...")
-            sub_chunks = chunk_summaries(chunk_results, chunk_tokens)
-            sub_results = []
-            for i, sub in enumerate(sub_chunks):
-                sub_text = "\n\n---\n\n".join(f"## Section {j+1}\n\n{s}" for j, s in enumerate(sub))
-                st = estimate_tokens(sub_text)
-                print(f"    Sub-merge {i+1}/{len(sub_chunks)}: ~{st:,} tokens ...", end=" ", flush=True)
-                prompt = MERGE_PROMPT.format(n=len(sub), category=category_name)
-                r = llm.call(prompt, sub_text, f"{category_name} sub-merge {i+1}", max_tokens)
-                rt = estimate_tokens(r)
-                print(f"→ ~{rt:,} tokens")
-                sub_results.append(r)
-                time.sleep(1)
-
-            merge_sections = sub_results
-            merged_input = "\n\n---\n\n".join(
-                f"## Section {i+1}\n\n{r}" for i, r in enumerate(merge_sections)
+        if category_artifact_dir:
+            write_artifact(
+                category_artifact_dir / "final_merge_input.md",
+                f"{category_name} - Final Merge Input",
+                f"*Input: {len(merge_sections)} consolidated chunk sections, ~{merge_tokens:,} tokens*",
+                merged_input,
             )
-            merge_tokens = estimate_tokens(merged_input)
-            print(f"  Final merge (after recursive): ~{merge_tokens:,} tokens ...", end=" ", flush=True)
 
-        prompt = MERGE_PROMPT.format(n=len(merge_sections), category=category_name)
-        result = llm.call(prompt, merged_input, f"{category_name} final merge", max_tokens)
-        result_tokens = estimate_tokens(result)
-        print(f"→ ~{result_tokens:,} tokens ({result_tokens/total_tokens*100:.0f}% of original)")
+        if final_merge == "concat":
+            result = concatenate_chunk_results(chunk_results)
+            result_tokens = estimate_tokens(result)
+            print(
+                f"  Final concat: {len(merge_sections)} sections, ~{result_tokens:,} tokens "
+                f"({result_tokens/total_tokens*100:.0f}% of original)"
+            )
+        else:
+            print(f"  Final merge: {len(merge_sections)} sections, ~{merge_tokens:,} tokens ...", end=" ", flush=True)
+
+            if merge_tokens > SINGLE_PASS_THRESHOLD * 2:
+                # Chunk results are still too big — do another round
+                print(f"\n  WARNING: Merge input is large (~{merge_tokens:,} tokens). Doing recursive merge...")
+                sub_chunks = chunk_summaries(chunk_results, chunk_tokens)
+                sub_results = []
+                for i, sub in enumerate(sub_chunks):
+                    sub_text = "\n\n---\n\n".join(f"## Section {j+1}\n\n{s}" for j, s in enumerate(sub))
+                    st = estimate_tokens(sub_text)
+                    print(f"    Sub-merge {i+1}/{len(sub_chunks)}: ~{st:,} tokens ...", end=" ", flush=True)
+                    prompt = MERGE_PROMPT.format(n=len(sub), category=category_name)
+                    r = llm.call(prompt, sub_text, f"{category_name} sub-merge {i+1}", max_tokens)
+                    rt = estimate_tokens(r)
+                    print(f"→ ~{rt:,} tokens")
+                    sub_results.append(r)
+                    time.sleep(1)
+
+                merge_sections = sub_results
+                merged_input = "\n\n---\n\n".join(
+                    f"## Section {i+1}\n\n{r}" for i, r in enumerate(merge_sections)
+                )
+                merge_tokens = estimate_tokens(merged_input)
+                print(f"  Final merge (after recursive): ~{merge_tokens:,} tokens ...", end=" ", flush=True)
+
+            prompt = MERGE_PROMPT.format(n=len(merge_sections), category=category_name)
+            result = llm.call(prompt, merged_input, f"{category_name} final merge", max_tokens)
+            result_tokens = estimate_tokens(result)
+            print(f"→ ~{result_tokens:,} tokens ({result_tokens/total_tokens*100:.0f}% of original)")
 
     # Write output
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -320,6 +394,12 @@ def main():
     add_codex_arguments(parser)
     parser.add_argument("--chunk-tokens", type=int, default=DEFAULT_CHUNK_TOKENS, help=f"Tokens per chunk (default: {DEFAULT_CHUNK_TOKENS})")
     parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS, help=f"Max output tokens per LLM call (default: {DEFAULT_MAX_TOKENS})")
+    parser.add_argument("--final-merge", choices=["model", "concat"], default="model",
+                        help="Final chunk merge strategy: model rewrite or deterministic concat (default: model)")
+    parser.add_argument("--save-intermediates", action="store_true",
+                        help="Persist raw chunk inputs and first-pass consolidated chunks under <output>/_chunks/")
+    parser.add_argument("--intermediate-dir", default=None,
+                        help="Directory for --save-intermediates artifacts (default: <output>/_chunks)")
     parser.add_argument("--dry-run", action="store_true", help="Show plan without making API calls")
     parser.add_argument("--skip-existing", action="store_true", help="Skip files that already exist in output")
     args = parser.parse_args()
@@ -368,18 +448,34 @@ def main():
         return 1
 
     output_dir = Path(args.output) if args.output else default_output
+    intermediate_dir = None
+    if args.save_intermediates:
+        intermediate_dir = Path(args.intermediate_dir) if args.intermediate_dir else output_dir / "_chunks"
 
     if not files:
         print("No .md files found.")
         return 1
 
     print(f"Will consolidate {len(files)} file(s) → {output_dir}/ with {model} via {args.provider}")
+    if args.final_merge == "concat":
+        print("Final merge strategy: deterministic concat")
+    if intermediate_dir:
+        print(f"Intermediate artifacts: {intermediate_dir}/")
 
     for filepath in files:
         if args.skip_existing and (output_dir / filepath.name).exists():
             print(f"\nSkipping {filepath.name} (already exists)")
             continue
-        consolidate_file(filepath, output_dir, llm, args.chunk_tokens, args.max_tokens, args.dry_run)
+        consolidate_file(
+            filepath,
+            output_dir,
+            llm,
+            args.chunk_tokens,
+            args.max_tokens,
+            args.dry_run,
+            args.final_merge,
+            intermediate_dir,
+        )
 
     print(f"\nDone!")
     return 0

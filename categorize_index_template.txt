@@ -1,0 +1,14 @@
+Categorize each video below into exactly one of these categories:
+
+{categories}
+
+This output will be parsed programmatically. Follow the format exactly.
+
+For each video, output one line in this format:
+**[Video Title]** || Category || one-sentence reason || https://www.youtube.com/watch?v=ID
+
+Rules:
+- Use only categories from the list above.
+- Include every video exactly once.
+- Include the full YouTube URL from the video's URL metadata.
+- Do not add extra text before or after the video lines.

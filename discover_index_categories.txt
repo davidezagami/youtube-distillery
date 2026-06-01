@@ -1,0 +1,14 @@
+You are given metadata for videos from a single YouTube channel before transcription.
+
+Identify between 6 and 10 practical categories that would help decide which videos are worth transcribing.
+- Use categories that separate likely useful videos from likely irrelevant videos.
+- Prefer concrete content themes over vague labels.
+- Avoid one category containing almost all videos.
+- Include both on-topic and off-topic buckets when the channel warrants it.
+
+Output each category on its own line, prefixed with "- ". Nothing else.
+
+Example output:
+- Sales, Closing, and Persuasion
+- Customer Acquisition and Lead Generation
+- Founder Mindset and Personal Development

@@ -51,12 +51,20 @@ def extract_url_from_section(section: str) -> str | None:
 def next_version_path(base_path: Path) -> Path:
     """Find the next available summaries_vN.md path."""
     parent = base_path.parent
-    stem = base_path.stem  # "summaries"
     suffix = base_path.suffix  # ".md"
-    version = 2
-    while (parent / f"{stem}_v{version}{suffix}").exists():
+    match = re.fullmatch(r"summaries(?:_v(\d+))?", base_path.stem)
+    if not match:
+        stem = base_path.stem
+        version = 2
+        while (parent / f"{stem}_v{version}{suffix}").exists():
+            version += 1
+        return parent / f"{stem}_v{version}{suffix}"
+
+    current_version = int(match.group(1) or "1")
+    version = current_version + 1
+    while (parent / f"summaries_v{version}{suffix}").exists():
         version += 1
-    return parent / f"{stem}_v{version}{suffix}"
+    return parent / f"summaries_v{version}{suffix}"
 
 
 def main() -> int:

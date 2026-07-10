@@ -20,6 +20,7 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 import yt_dlp
 
 from yttranscribe import (
@@ -30,6 +31,42 @@ from yttranscribe import (
     format_timestamp,
 )
 from transcribe import Transcriber, Enhancer, prepare_text_chunks
+
+
+def build_proxy_configs(webshare_user: str | None, webshare_pass: str | None) -> list:
+    """Build proxy configs for YouTube transcript requests.
+
+    WEBSHARE_PROXY_USERS is a local extension for comma-separated raw Webshare
+    proxy usernames. Those are already complete proxy endpoint usernames, so
+    they must not go through WebshareProxyConfig, which appends "-rotate".
+    """
+    if webshare_pass and os.getenv("WEBSHARE_PROXY_USERS"):
+        from youtube_transcript_api.proxies import GenericProxyConfig
+
+        users = [
+            user.strip()
+            for user in os.getenv("WEBSHARE_PROXY_USERS", "").replace("\n", ",").split(",")
+            if user.strip()
+        ]
+        configs = []
+        for user in users:
+            proxy_url = (
+                f"http://{quote(user, safe='')}:{quote(webshare_pass, safe='')}"
+                "@p.webshare.io:80/"
+            )
+            configs.append(GenericProxyConfig(http_url=proxy_url, https_url=proxy_url))
+        if configs:
+            print(f"Using {len(configs)} raw Webshare proxy endpoint(s).")
+            return configs
+
+    if webshare_user and webshare_pass:
+        from youtube_transcript_api.proxies import WebshareProxyConfig
+
+        return [
+            WebshareProxyConfig(proxy_username=webshare_user, proxy_password=webshare_pass)
+        ]
+
+    return [None]
 
 
 # ---------------------------------------------------------------------------
@@ -313,11 +350,12 @@ def process_videos(
     anthropic_model: str = "claude-opus-4-6",
     lang: str = "en",
     timestamps: bool = True,
-    proxy_config=None,
+    proxy_configs: list | None = None,
 ) -> None:
     """Transcribe all pending videos in the index."""
     index = load_index(output_dir)
     videos = index.get("videos", [])
+    proxy_configs = proxy_configs or [None]
 
     pending = [v for v in videos if v.get("status") == "pending"]
     if not pending:
@@ -334,6 +372,7 @@ def process_videos(
 
         # 1. Try YouTube captions
         print("  Trying YouTube captions...")
+        proxy_config = proxy_configs[i % len(proxy_configs)]
         body, yt_error = transcribe_video_yt(video["id"], lang=lang, timestamps=timestamps, proxy_config=proxy_config)
         if body:
             method = "youtube-captions"
@@ -436,11 +475,7 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
 
     ws_user = args.webshare_user or os.getenv("WEBSHARE_PROXY_USER")
     ws_pass = args.webshare_pass or os.getenv("WEBSHARE_PROXY_PASS")
-    if ws_user and ws_pass:
-        from youtube_transcript_api.proxies import WebshareProxyConfig
-        proxy_config = WebshareProxyConfig(proxy_username=ws_user, proxy_password=ws_pass)
-    else:
-        proxy_config = None
+    proxy_configs = build_proxy_configs(ws_user, ws_pass)
 
     process_videos(
         output_dir,
@@ -450,7 +485,7 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
         anthropic_model=anthropic_model,
         lang=args.lang,
         timestamps=args.include_timestamps,
-        proxy_config=proxy_config,
+        proxy_configs=proxy_configs,
     )
     return 0
 

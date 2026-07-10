@@ -5,6 +5,7 @@ import sys
 import os
 import re
 import argparse
+from urllib.parse import quote
 from youtube_transcript_api import YouTubeTranscriptApi
 
 
@@ -42,6 +43,31 @@ def download_transcript(video_id: str, lang: str = "en", proxy_config=None) -> l
         transcript = transcript_list.find_generated_transcript([lang])
 
     return transcript.fetch()
+
+
+def build_proxy_config(webshare_user: str | None, webshare_pass: str | None):
+    """Build a proxy config for standalone transcript fetches."""
+    if webshare_pass and os.getenv("WEBSHARE_PROXY_USERS"):
+        from youtube_transcript_api.proxies import GenericProxyConfig
+
+        users = [
+            user.strip()
+            for user in os.getenv("WEBSHARE_PROXY_USERS", "").replace("\n", ",").split(",")
+            if user.strip()
+        ]
+        if users:
+            proxy_url = (
+                f"http://{quote(users[0], safe='')}:{quote(webshare_pass, safe='')}"
+                "@p.webshare.io:80/"
+            )
+            return GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
+
+    if webshare_user and webshare_pass:
+        from youtube_transcript_api.proxies import WebshareProxyConfig
+
+        return WebshareProxyConfig(proxy_username=webshare_user, proxy_password=webshare_pass)
+
+    return None
 
 
 def clean_text(text: str) -> str:
@@ -209,9 +235,7 @@ def main():
     proxy_config = None
     ws_user = getattr(args, "webshare_user", None) or os.getenv("WEBSHARE_PROXY_USER")
     ws_pass = getattr(args, "webshare_pass", None) or os.getenv("WEBSHARE_PROXY_PASS")
-    if ws_user and ws_pass:
-        from youtube_transcript_api.proxies import WebshareProxyConfig
-        proxy_config = WebshareProxyConfig(proxy_username=ws_user, proxy_password=ws_pass)
+    proxy_config = build_proxy_config(ws_user, ws_pass)
 
     video_id = extract_video_id(args.url)
     print(f"Fetching transcript for video: {video_id}")

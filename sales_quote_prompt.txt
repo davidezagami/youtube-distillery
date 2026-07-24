@@ -1,0 +1,26 @@
+You are given one transcript from the sales corpus.
+
+Determine whether it contains directly reusable sales wording.
+
+A qualifying quote is a short verbatim excerpt that gives exact words someone
+could say in a specific sales situation, such as:
+- an example opening for cold calling
+- a discovery or qualification question
+- an objection-handling response
+- follow-up wording
+- a closing or negotiation line
+- a short role-play example or script snippet
+
+Selection rules:
+- Keep only quotes clearly grounded in the transcript.
+- Keep only wording that is actually usable in live selling or coaching.
+- Prefer moments where the speaker explicitly gives a phrase, script, example, opener, question, or response to use.
+- If the speaker explains the tactic and then gives the actual wording, keep the wording and drop the explanation around it.
+- Copy the quote verbatim except you may collapse whitespace created by hard-wrapped transcript lines.
+- Exclude generic commentary about sales, abstract lessons, broad summaries, filler, long explanations, and paraphrases.
+- Keep the quote as short as possible while preserving a self-contained usable phrase.
+- For each quote, identify the specific situation where it should be used.
+- Return at most {max_quotes} quotes.
+
+If the transcript mostly discusses sales conceptually without strong reusable
+phrasing, return no quotes.

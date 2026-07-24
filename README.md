@@ -197,6 +197,45 @@ python summarize.py <dir>/ --provider codex-exec --prompt-file summary_prompt.tx
 
 Resumable: already-summarized video IDs are detected and skipped on re-run.
 
+### extract_sales_quotes.py
+
+Extract reusable sales-talk quotes from the manifest-defined sales corpus by
+running one local non-interactive `codex exec` call per transcript.
+
+```
+python extract_sales_quotes.py
+python extract_sales_quotes.py -o output/_sales_group/sales_talk_quotes.md
+python extract_sales_quotes.py --video-id A_881tlXXa0 --limit 1
+```
+
+Defaults:
+
+- Reads `output/_sales_group/manifest.json`
+- Appends to `output/_sales_group/sales_talk_quotes.md`
+- Uses `sales_quote_prompt.txt`
+- Uses `gpt-5.5` unless `--model`, `CODEX_QUOTE_MODEL`, or `CODEX_MODEL` overrides it
+- Uses `--codex-reasoning-effort none`
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--manifest` | `output/_sales_group/manifest.json` | Manifest that defines the exact sales corpus video set |
+| `--output` | `<manifest_dir>/sales_talk_quotes.md` | Output markdown file; re-runs resume by URL and append only new sections |
+| `--prompt-file` | `sales_quote_prompt.txt` | Prompt template for quote selection |
+| `--model` | `CODEX_QUOTE_MODEL`/`CODEX_MODEL`/`gpt-5.5` | Codex model override |
+| `--codex-command` | `codex` | Codex executable path/name |
+| `--codex-reasoning-effort` | `none` | Codex reasoning effort for quote extraction |
+| `--codex-verbosity` | `low` | Codex response verbosity |
+| `--codex-timeout` | `900` | Seconds to wait for each Codex call |
+| `--concurrency` | `1` | Max parallel Codex calls |
+| `--max-quotes` | `5` | Max quotes to keep per transcript |
+| `--channel` | all manifest channels | Limit a run to one channel; repeat for multiple channels |
+| `--video-id` | all manifest videos | Limit a run to one specific YouTube video ID; repeat for multiple IDs |
+| `--limit` | unlimited | Max videos to process in this run |
+
+The script records transcripts with no qualifying quotes as well, so interrupted
+runs can resume cleanly from the same output file. Each kept quote includes the
+specific sales situation where the phrasing should be used.
+
 ### analyze.py
 
 Run a chunked analysis over summaries using a prompt file. Summaries are split into batches, each sent to the selected provider, and responses are concatenated.
